@@ -1,0 +1,2527 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>versecam</title>
+<style>
+  /* Replica del TUI: tarjetas + terminal cruda + servicios, todo teclado.
+     Aqui si hay sombras, gradientes y esquinas reales. */
+  :root {
+    --bg: #05060d;
+    --bg2: #0a0d1a;
+    --panel: #0b1020;
+    --line: #1d2b4d;
+    --text: #c8d6f0;
+    --muted: #5f7099;
+    --cyan: #00f0ff;
+    --magenta: #ff2bd6;
+    --lime: #a6ff2b;
+    --amber: #ffb300;
+    --red: #ff3355;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); overflow: hidden;
+    font: 13px/1.45 "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  .app { display: grid; grid-template-rows: 38px 1fr 26px; height: 100vh; }
+
+  header {
+    display: flex; align-items: center; gap: 14px; padding: 0 14px;
+    background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  header .mark { width: 24px; height: 24px; flex: none; filter: drop-shadow(0 0 8px rgba(0,240,255,.45)); }
+  header .logo { font-weight: 700; letter-spacing: 3px; color: var(--cyan); text-shadow: 0 0 12px rgba(0,240,255,.6); }
+  header .logo span { color: var(--magenta); text-shadow: 0 0 12px rgba(255,43,214,.6); }
+  /* Proyecto abierto: el equivalente al titulo de ventana de VSCode. */
+  header .project { font-size: 11px; letter-spacing: 1px; color: var(--lime); cursor: pointer; }
+  header .project:empty { display: none; }
+  header .project::before { content: "▸ "; color: var(--muted); }
+  header .clock { color: var(--muted); font-size: 12px; }
+  header .voice { font-size: 11px; letter-spacing: 1px; }
+  header .voice.on { color: var(--lime); text-shadow: 0 0 8px rgba(166,255,43,.5); }
+  header .voice.off { color: var(--muted); }
+  .spacer { flex: 1; }
+
+  .body { display: grid; grid-template-columns: 350px 1fr; min-height: 0; }
+
+  /* ---- Columna izquierda: tarjetas + servicios ---- */
+  .left { display: flex; flex-direction: column; min-height: 0; background: var(--bg2); border-right: 1px solid var(--line); }
+  .cards { flex: 1; overflow-y: auto; padding: 10px; scrollbar-width: thin; }
+
+  .card {
+    position: relative; border: 1px solid var(--line); border-radius: 10px;
+    padding: 9px 11px; margin-bottom: 9px; background: var(--panel);
+    box-shadow: 0 3px 10px rgba(0,0,0,.45);
+    transition: border-color .25s, box-shadow .25s, opacity .25s;
+    overflow: hidden;
+  }
+  .card .head { display: flex; align-items: center; gap: 8px; }
+  .card .ticket { font-weight: 700; letter-spacing: 1px; color: #e8f2ff; }
+  .card .status { font-size: 11px; letter-spacing: 1px; }
+  /* Nombre completo del worktree, debajo del titulo */
+  .card .wname { font-size: 9.5px; color: var(--muted); letter-spacing: .4px; margin-top: 1px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Badge de estado: solido y llamativo */
+  .stbadge {
+    padding: 1px 9px; border-radius: 999px; font-size: 9px; font-weight: 700;
+    letter-spacing: 1.4px; text-transform: uppercase; white-space: nowrap;
+  }
+  .stbadge.working { background: var(--lime); color: #142600; box-shadow: 0 0 14px rgba(166,255,43,.55); }
+  .stbadge.waiting { background: var(--amber); color: #2a1c00; box-shadow: 0 0 12px rgba(255,179,0,.5); }
+  .stbadge.anomalo { background: var(--red); color: #fff; box-shadow: 0 0 12px rgba(255,51,85,.5); }
+  .stbadge.off { background: #1a2338; color: var(--muted); }
+  /* Atomo electrificado: la señal de vida de un worker trabajando */
+  .rightside { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .atom { display: inline-block; width: 26px; height: 26px; flex: 0 0 auto; }
+  .atom svg { width: 100%; height: 100%; overflow: visible; animation: zap 1.9s steps(1) infinite; }
+  .atom .orb { transform-origin: 12px 12px; animation: orbit 1.4s linear infinite; }
+  .atom .orb2 { animation-duration: 2.1s; animation-direction: reverse; }
+  .atom .nuc { transform-origin: 12px 12px; animation: nucleo 1.1s ease-in-out infinite; }
+  .atom .bolt { opacity: 0; fill: none; stroke-width: 1.8; stroke-linecap: round;
+    stroke-linejoin: round; animation: spark 1.3s steps(1) infinite; }
+  .atom .b2 { animation-duration: 1.7s; animation-delay: .6s; }
+  .atom .b3 { animation-duration: 2.3s; animation-delay: 1.1s; }
+  @keyframes orbit { to { transform: rotate(360deg); } }
+  @keyframes nucleo { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+  @keyframes zap {
+    0%, 100% { filter: drop-shadow(0 0 2px rgba(0,240,255,.5)); }
+    42% { filter: drop-shadow(0 0 7px rgba(0,240,255,.95)); }
+    47% { filter: drop-shadow(0 0 3px rgba(255,43,214,.9)); }
+    52% { filter: drop-shadow(0 0 8px rgba(0,240,255,.7)); }
+    58% { filter: drop-shadow(0 0 2px rgba(0,240,255,.5)); }
+  }
+  @keyframes spark {
+    0%, 86% { opacity: 0; }
+    87%, 93% { opacity: 1; }
+    94%, 100% { opacity: 0; }
+  }
+  .card .task { margin-top: 4px; font-size: 11px; color: var(--muted);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .meta { margin-top: 6px; display: flex; gap: 5px; flex-wrap: wrap; }
+  .chip {
+    padding: 0 7px; border-radius: 999px; font-size: 9.5px; letter-spacing: .5px;
+    border: 1px solid var(--line); color: var(--muted); background: rgba(16,26,48,.6);
+  }
+  .chip.ok { color: var(--lime); border-color: rgba(166,255,43,.4); background: rgba(166,255,43,.07); }
+  .chip.info { color: var(--cyan); border-color: rgba(0,240,255,.35); background: rgba(0,240,255,.06); }
+  .chip.warn { color: var(--amber); border-color: rgba(255,179,0,.45); background: rgba(255,179,0,.08); }
+  .chip.bad { color: var(--red); border-color: rgba(255,51,85,.5); background: rgba(255,51,85,.08); }
+  .chip.branch { color: #c4b5fd; border-color: rgba(139,92,246,.55); background: rgba(139,92,246,.14); }
+
+  /* apagada: opaca */
+  .card.stopped { opacity: .5; }
+  /* trabajando: fondo con degradado en movimiento + glow */
+  .card.working {
+    border-color: rgba(0,240,255,.5);
+    box-shadow: 0 3px 14px rgba(0,0,0,.5), 0 0 18px rgba(0,240,255,.12);
+  }
+  .card.working::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(120deg, rgba(0,240,255,.12), rgba(8,80,90,.04) 55%, transparent);
+  }
+  .card.working .status { color: var(--lime); }
+  .card.working .task { color: #9fd8e8; }
+  .card.waiting { border-color: rgba(255,179,0,.45); }
+  .card.waiting::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(120deg, rgba(255,179,0,.1), transparent 60%);
+  }
+  .card.waiting .status { color: var(--amber); }
+  .card.anomalo { border-color: rgba(255,51,85,.55); }
+  .card.anomalo .status { color: var(--red); }
+
+  .card.selected {
+    border-color: var(--magenta); border-left-width: 4px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.55), 0 0 22px rgba(255,43,214,.28);
+  }
+  .card.selected .ticket { color: var(--cyan); text-shadow: 0 0 8px rgba(0,240,255,.5); }
+  /* Etiqueta "AQUI": el worktree en el que estas parado, imposible perderse */
+  .here {
+    padding: 1px 9px; border-radius: 999px;
+    background: var(--magenta); color: #fff; font-size: 8.5px; font-weight: 700;
+    letter-spacing: 1.4px; text-transform: uppercase; white-space: nowrap;
+    box-shadow: 0 0 14px rgba(255,43,214,.65);
+  }
+
+  /* ---- Servicios abajo-izquierda ---- */
+  .services { border-top: 1px solid var(--line); padding: 9px 12px; max-height: 34%; overflow-y: auto; background: var(--panel); }
+  .services h3 { margin: 0 0 7px; font-size: 10px; letter-spacing: 2px; color: var(--cyan); text-transform: uppercase; }
+  .svc { display: flex; align-items: center; gap: 8px; font-size: 11px; padding: 2px 0; }
+  .svc .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 8px var(--lime); animation: pulse 1.2s ease-in-out infinite; }
+  .svc .name { flex: 1; }
+  .svc .run { color: var(--lime); }
+  .svc .mem { color: var(--muted); font-size: 10px; }
+  .svc.more { color: var(--muted); font-size: 10px; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+
+  /* ---- Terminal ---- */
+  .right { display: flex; flex-direction: column; min-height: 0; }
+  .tabs { display: flex; gap: 6px; padding: 7px 12px 0; align-items: center; }
+  .tab {
+    padding: 3px 13px; font-size: 11px; letter-spacing: 1px; border-radius: 6px 6px 0 0;
+    background: #101a30; color: var(--muted); border: 1px solid var(--line); border-bottom: none;
+    transition: all .2s;
+  }
+  .tab.active {
+    background: var(--cyan); color: #05060d; font-weight: 700;
+    box-shadow: 0 -2px 14px rgba(0,240,255,.35);
+  }
+  .tab-ico { width: 11px; height: 11px; vertical-align: -1px; margin-right: 4px; }
+  .tab-prof { font-size: 9px; opacity: .75; letter-spacing: .5px; }
+  .tab.active .tab-prof { color: #05060d; opacity: .85; }
+  .tab:not(.active) .tab-prof { color: var(--magenta); }
+  .tabs .hint { margin-left: auto; font-size: 10px; color: var(--muted); }
+
+  .termwrap { flex: 1; position: relative; margin: 0 12px 12px; min-height: 0;
+    border: 1px solid var(--line); border-radius: 8px; background: #02030a;
+    box-shadow: inset 0 0 50px rgba(0,240,255,.04), 0 4px 18px rgba(0,0,0,.5);
+    overflow: hidden; }
+  #term {
+    position: absolute; inset: 8px; overflow: hidden;
+    white-space: pre; font-size: 13px; line-height: 17px; color: #c8d6f0;
+  }
+  #term .row { height: 17px; }
+  #caret {
+    position: absolute; width: 2px; height: 15px; background: var(--cyan);
+    box-shadow: 0 0 8px var(--cyan); animation: blink 1.1s steps(1) infinite;
+    display: none;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .placeholder { position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px; color: var(--muted); letter-spacing: 1px; }
+
+  /* ---- Overlays flotantes: C-d archivos, C-t jira, C-g github,
+     C-s servicios, C-a nueva terminal ---- */
+  #explorer, #jira, #github, #svcpanel, #launcher, #assoc {
+    position: fixed; inset: 0; display: none; z-index: 50;
+    background: rgba(3,4,10,.55); backdrop-filter: blur(5px);
+    align-items: center; justify-content: center;
+  }
+  #explorer.open, #jira.open, #github.open, #svcpanel.open, #launcher.open, #assoc.open { display: flex; }
+  #launcher, #assoc { z-index: 60; }
+
+  .mini-box {
+    width: 360px; background: rgba(10,13,26,.98); border: 1px solid var(--cyan);
+    border-radius: 12px; overflow: hidden; animation: exp-in .14s ease-out;
+    box-shadow: 0 18px 50px rgba(0,0,0,.7), 0 0 30px rgba(0,240,255,.15);
+  }
+  .mini-box h4 { margin: 0; padding: 9px 14px; font-size: 10px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--cyan); border-bottom: 1px solid var(--line); }
+  .ln-row { display: flex; align-items: center; gap: 9px; padding: 7px 14px; font-size: 12px; }
+  .ln-row.sel { background: rgba(0,240,255,.1); outline: 1px solid rgba(0,240,255,.35); }
+  .ln-row .nm { flex: 1; color: #e8f2ff; }
+  .ln-row .k { color: var(--muted); font-size: 10px; }
+  .mini-foot { padding: 6px 14px; font-size: 9.5px; color: var(--muted); border-top: 1px solid var(--line); }
+
+  /* ---- Selector de proyecto (C-p): la pantalla con la que abre la app
+     cuando la lanzan desde el buscador de aplicaciones ---- */
+  #projects {
+    position: fixed; inset: 0; display: none; z-index: 80;
+    background: radial-gradient(ellipse at 50% -10%, #101a3d 0%, var(--bg) 62%);
+    align-items: center; justify-content: center;
+  }
+  #projects.open { display: flex; }
+  .pj-box { width: 660px; max-width: 92vw; max-height: 88vh; display: flex; flex-direction: column; }
+  .pj-hero { display: flex; align-items: center; gap: 18px; padding: 0 4px 20px; }
+  .pj-hero .mark { width: 78px; height: 78px; flex: none; filter: drop-shadow(0 0 22px rgba(0,240,255,.4)); }
+  .pj-hero .t { font-size: 26px; font-weight: 700; letter-spacing: 7px; color: #e8f2ff; }
+  .pj-hero .t span { color: var(--magenta); }
+  .pj-hero .s { font-size: 11px; letter-spacing: 2px; color: var(--muted); margin-top: 4px; }
+  .pj-list {
+    overflow-y: auto; scrollbar-width: thin; padding: 8px;
+    border: 1px solid var(--line); border-radius: 12px; background: rgba(10,13,26,.9);
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  .pj-sec { font-size: 9.5px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); padding: 10px 10px 6px; }
+  .pj-row {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    border: 1px solid transparent; border-radius: 8px; cursor: pointer;
+  }
+  .pj-row:hover { background: rgba(120,160,255,.07); }
+  .pj-row.sel { background: rgba(0,240,255,.1); border-color: rgba(0,240,255,.45); }
+  .pj-row .nm { color: #e8f2ff; font-weight: 700; }
+  .pj-row .rt { flex: 1; color: var(--muted); font-size: 11px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .pj-row .tag { font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+    padding: 1px 6px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .pj-row .tag.git { color: var(--lime); border-color: rgba(166,255,43,.4); }
+  .pj-row .when { font-size: 10px; color: var(--muted); }
+  .pj-foot { padding: 10px 6px 0; font-size: 10px; color: var(--muted); letter-spacing: .5px; }
+  .pj-foot b { color: var(--cyan); }
+  .pj-crumb { padding: 8px 10px; font-size: 11px; color: var(--cyan); word-break: break-all; }
+
+  .sv-body { flex: 1; display: grid; grid-template-columns: 320px 1fr; min-height: 0; }
+  .sv-list { overflow-y: auto; border-right: 1px solid var(--line); padding: 8px; }
+  .sv-row { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 9px; margin-bottom: 7px; font-size: 11px; background: var(--panel); }
+  .sv-row.sel { border-color: var(--magenta); box-shadow: 0 0 12px rgba(255,43,214,.25); }
+  .sv-row .nm { flex: 1; color: #e8f2ff; }
+  /* Infraestructura detectada: la familia (postgres, redis, rabbit...) va
+     coloreada al frente para distinguirla de los procesos de desarrollo. */
+  .sv-row .kind { font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+    border: 1px solid; border-radius: 4px; padding: 1px 5px; flex: none; min-width: 62px; text-align: center; }
+  .sv-sec { font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--muted); padding: 6px 4px 4px; }
+  /* Los puertos van en un solo chip: partido en dos lineas descuadra la fila. */
+  .sv-row .chip { white-space: nowrap; }
+  .sv-logs { overflow: auto; padding: 10px 12px; font-size: 11px; line-height: 15px;
+    white-space: pre-wrap; word-break: break-word; color: #9fd8e8; background: #02030a; }
+
+  /* ---- Mosaico de logs: varios servicios a la vez (enter fija/suelta) ----
+     Ocupa la MISMA celda que el visor de un solo servicio; solo uno de los dos
+     se muestra a la vez. */
+  .sv-logs, .sv-panes { grid-column: 2; grid-row: 1; }
+  .sv-panes { display: none; gap: 8px; padding: 8px; overflow: auto; min-height: 0;
+    background: #02030a; scrollbar-width: thin; }
+  .pane { display: flex; flex-direction: column; min-height: 120px; overflow: hidden;
+    border: 1px solid var(--line); border-radius: 8px; background: #04050e; }
+  .pane.act { border-color: var(--cyan); box-shadow: 0 0 14px rgba(0,240,255,.14); }
+  .pane-head { display: flex; align-items: center; gap: 7px; padding: 4px 9px;
+    background: var(--panel); border-bottom: 1px solid var(--line); font-size: 10px; }
+  .pane-head .nm { flex: 1; color: #e8f2ff; font-weight: 700; letter-spacing: .5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pane-body { flex: 1; overflow: auto; padding: 6px 9px; font-size: 10.5px; line-height: 14.5px;
+    white-space: pre-wrap; word-break: break-word; color: #9fd8e8; scrollbar-width: thin; }
+  /* Marca en la lista de lo que ya esta en el mosaico. */
+  .sv-row .pin { color: var(--cyan); font-size: 10px; flex: none; }
+
+  /* ---- Vista de diagrama del panel de servicios (tecla a) ----
+     Las mismas cajas de la lista, colocadas por capas: aplicaciones arriba,
+     servicios en medio, infraestructura abajo, con las dependencias dibujadas. */
+  .sv-diagram { flex: 1; position: relative; overflow: auto; scrollbar-width: thin;
+    background:
+      radial-gradient(circle at 50% 0%, rgba(0,240,255,.05), transparent 55%),
+      repeating-linear-gradient(0deg, rgba(29,43,77,.25) 0 1px, transparent 1px 28px),
+      repeating-linear-gradient(90deg, rgba(29,43,77,.25) 0 1px, transparent 1px 28px);
+  }
+  .dg-canvas { position: relative; }
+  .dg-edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+  .dg-edge { fill: none; stroke: #24365e; stroke-width: 1.4; }
+  .dg-edge.live { stroke: var(--cyan); stroke-width: 1.6; opacity: .8;
+    stroke-dasharray: 5 8; animation: dg-flow 1.1s linear infinite; }
+  @keyframes dg-flow { to { stroke-dashoffset: -26; } }
+
+  .dg-lane { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(29,43,77,.7); }
+  .dg-lane span { position: absolute; top: -7px; left: 14px; padding: 0 8px;
+    background: var(--panel); font-size: 9px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--muted); }
+
+  .dg-node {
+    position: absolute; border: 1px solid var(--line); border-radius: 10px;
+    background: linear-gradient(180deg, rgba(16,24,46,.98), rgba(9,13,26,.98));
+    padding: 8px 11px; box-shadow: 0 6px 18px rgba(0,0,0,.5); overflow: hidden;
+    transition: transform .18s, box-shadow .18s, border-color .18s;
+  }
+  .dg-node .nm { display: block; color: #e8f2ff; font-weight: 700; font-size: 12px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dg-node .sub { display: block; margin-top: 3px; font-size: 9.5px; color: var(--muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dg-node .bar { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--line); }
+  .dg-node.off { opacity: .72; border-style: dashed; }
+  /* El latido marca lo que esta vivo sin tener que leer nada. */
+  .dg-node.on .bar { animation: dg-pulse 1.8s ease-in-out infinite; }
+  @keyframes dg-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  /* La seleccion va por fuera del borde: el borde lo pinta el estado
+     (verde/rojo) con estilo inline y taparlo perderia esa lectura. */
+  .dg-node.sel { transform: translateY(-2px); opacity: 1;
+    outline: 2px solid var(--cyan); outline-offset: 3px; }
+
+  .gh-body { flex: 1; overflow-y: auto; padding: 14px 18px; font-size: 12px; }
+  .gh-body h3 { color: var(--cyan); font-size: 11px; letter-spacing: 2px;
+    text-transform: uppercase; margin: 16px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+  .gh-body h3:first-child { margin-top: 0; }
+  .gh-row { display: flex; align-items: center; gap: 9px; padding: 4px 0; flex-wrap: wrap; }
+  .gh-row .repo { color: #e8f2ff; font-weight: 700; min-width: 160px; }
+  .gh-row .branch { color: var(--lime); }
+  .gh-row .title { color: var(--text); flex: 1; min-width: 200px; }
+  .gh-url { color: var(--muted); font-size: 10px; }
+  .gh-commits { margin: 4px 0 10px; }
+  .gh-commits .cl { color: var(--muted); font-size: 11px; padding: 1px 0; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+  .gh-commits .cl b { color: var(--amber); font-weight: 500; }
+  /* Arbol de versiones estilo git graph */
+  .gg-repo { margin: 4px 0 14px; }
+  .gg-row { display: flex; align-items: center; height: 26px; white-space: nowrap; overflow: hidden; }
+  .gg-row:hover { background: rgba(120, 160, 255, .06); }
+  .gg-row svg { flex: none; display: block; }
+  .gg-row .hash { color: var(--amber); font-size: 11px; margin: 0 8px 0 4px; flex: none; }
+  .gg-row .msg { color: var(--text); font-size: 11px; overflow: hidden; text-overflow: ellipsis; min-width: 60px; }
+  .gg-row .who { color: var(--muted); font-size: 10px; margin-left: auto; padding-left: 12px; flex: none; }
+  .gg-ref { display: inline-block; font-size: 9px; font-weight: 700; padding: 0 5px; border-radius: 6px;
+            border: 1px solid; margin-right: 5px; line-height: 14px; vertical-align: 1px; }
+  .gg-ref.head { color: #67e8f9; border-color: rgba(34, 211, 238, .6); background: rgba(34, 211, 238, .12); }
+  .gg-ref.local { color: #86efac; border-color: rgba(74, 222, 128, .55); background: rgba(74, 222, 128, .1); }
+  .gg-ref.remote { color: #f9a8d4; border-color: rgba(244, 114, 182, .5); background: rgba(244, 114, 182, .1); }
+  .gg-ref.tag { color: #fde68a; border-color: rgba(251, 191, 36, .55); background: rgba(251, 191, 36, .1); }
+
+  .jr-board { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 12px; min-height: 0; }
+  .jr-col { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--line); border-radius: 10px; background: rgba(5,8,18,.6); }
+  .jr-col h4 { margin: 0; padding: 8px 12px; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; border-bottom: 1px solid var(--line); }
+  .jr-col.cat-new h4 { color: var(--muted); }
+  .jr-col.cat-indeterminate h4 { color: var(--amber); }
+  .jr-col.cat-done h4 { color: var(--lime); }
+  .jr-cards { overflow-y: auto; padding: 8px; flex: 1; }
+  .jr-card { border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; margin-bottom: 8px; background: var(--panel); font-size: 11px; transition: border-color .15s, box-shadow .15s; }
+  .jr-card.sel { border-color: var(--magenta); box-shadow: 0 0 14px rgba(255,43,214,.25); }
+  .jr-card .k { color: var(--cyan); font-weight: 700; }
+  .jr-card .s { color: var(--text); margin-top: 2px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .jr-card .chips { margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .jr-detail { flex: 1; overflow-y: auto; padding: 14px 18px; font-size: 12px; }
+  .jr-detail h2 { color: var(--cyan); font-size: 14px; margin: 0 0 6px; }
+  .jr-desc { color: var(--text); margin-top: 12px; line-height: 1.65; }
+  .jr-com { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 10px; }
+  .jr-com .a { color: var(--magenta); font-size: 10px; letter-spacing: .5px; }
+  .jr-com .txt { margin-top: 4px; line-height: 1.6; }
+  /* Contenido rico del ticket (ADF -> HTML) */
+  .jr-rich p { margin: 7px 0; }
+  .jr-rich h4 { color: var(--magenta); font-size: 12px; letter-spacing: 1.5px;
+    text-transform: uppercase; margin: 16px 0 6px; border-bottom: 1px solid var(--line); padding-bottom: 3px; }
+  .jr-rich ul, .jr-rich ol { margin: 6px 0 10px 22px; padding: 0; }
+  .jr-rich li { margin: 3px 0; }
+  .jr-rich b { color: #e8f2ff; }
+  .jr-rich code { background: #101a30; border-radius: 3px; padding: 0 5px; color: var(--lime); font-size: 11px; }
+  .jr-rich pre { background: #02030a; border: 1px solid var(--line); border-radius: 6px;
+    padding: 9px 11px; overflow-x: auto; font-size: 11px; color: #9fd8e8; }
+  .jr-rich blockquote { border-left: 3px solid var(--line); margin: 8px 0; padding: 2px 12px; color: var(--muted); }
+  .jr-rich hr { border: none; border-top: 1px solid var(--line); margin: 12px 0; }
+  .jr-rich table { border-collapse: collapse; margin: 10px 0; }
+  .jr-rich td, .jr-rich th { border: 1px solid var(--line); padding: 4px 10px; font-size: 11px; text-align: left; }
+  .jr-rich th { color: var(--cyan); background: rgba(0,240,255,.05); font-weight: 500; }
+  .jr-rich .mnt { color: var(--cyan); }
+  .exp-box {
+    width: 88%; height: 86%; display: flex; flex-direction: column; overflow: hidden;
+    background: rgba(10,13,26,.97); border: 1px solid var(--magenta); border-radius: 12px;
+    box-shadow: 0 24px 70px rgba(0,0,0,.75), 0 0 45px rgba(255,43,214,.18);
+    animation: exp-in .16s ease-out;
+  }
+  @keyframes exp-in { from { transform: scale(.97); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .exp-head { display: flex; align-items: baseline; gap: 10px; padding: 10px 16px;
+    border-bottom: 1px solid var(--line); font-size: 12px; }
+  .exp-head .t { color: var(--cyan); font-weight: 700; letter-spacing: 2px; }
+  .exp-head .w { color: var(--magenta); font-weight: 700; }
+  .exp-head .p { color: var(--cyan); }
+  .exp-head .b { color: var(--lime); }
+  .exp-head .adds { color: var(--lime); }
+  .exp-head .dels { color: var(--red); }
+  .exp-head .file { color: var(--text); margin-left: auto; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; max-width: 38%; }
+  .exp-body { flex: 1; display: grid; grid-template-columns: 320px 1fr; min-height: 0; }
+  .exp-tree { overflow-y: auto; border-right: 1px solid var(--line); padding: 8px 4px; font-size: 12px; }
+  .exp-row { padding: 1px 8px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .exp-row.sel { background: rgba(255,43,214,.18); outline: 1px solid rgba(255,43,214,.4); }
+  .exp-row .dirname { color: var(--cyan); }
+  .fico { width: 13px; height: 13px; vertical-align: -2px; margin-right: 5px; }
+  .exp-row .st-M { color: var(--amber); }
+  .exp-row .st-A { color: var(--lime); }
+  .exp-row .st-D { color: var(--red); }
+  .exp-code { overflow: auto; font-size: 12px; line-height: 17px; padding: 6px 0; }
+  .exp-code .crow { white-space: pre; }
+  .exp-code .crow.mark { background: rgba(18,72,36,.6); }
+  .exp-code .ln { display: inline-block; width: 5ch; text-align: right; margin-right: 1ch;
+    color: var(--muted); user-select: none; }
+  .exp-code .crow.mark .ln { color: var(--lime); }
+  .exp-empty { padding: 30px; color: var(--muted); }
+  .exp-foot { padding: 7px 16px; border-top: 1px solid var(--line); font-size: 10px; color: var(--muted); }
+  .exp-foot b { color: var(--cyan); font-weight: 500; }
+
+  footer {
+    display: flex; align-items: center; gap: 16px; padding: 0 14px;
+    background: var(--panel); border-top: 1px solid var(--line);
+    font-size: 10px; color: var(--muted); letter-spacing: .8px;
+  }
+  footer b { color: var(--cyan); font-weight: 500; }
+  footer .msg { color: var(--amber); }
+</style>
+</head>
+<body>
+<!-- El logo de versecam, el mismo del lanzador de aplicaciones (assets/versecam.svg),
+     como simbolo reutilizable: encabezado y pantalla de bienvenida. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="vc-glow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#00f0ff"/>
+      <stop offset="1" stop-color="#ff2bd6"/>
+    </linearGradient>
+    <symbol id="vc-logo" viewBox="0 0 128 128">
+      <rect x="4" y="4" width="120" height="120" rx="26" fill="#05060d" stroke="url(#vc-glow)" stroke-width="4"/>
+      <path d="M 30 38 L 58 96 L 66 96 L 40 38 Z" fill="#00f0ff"/>
+      <path d="M 78 38 L 64 96 L 72 96 L 86 38 Z" fill="#ff2bd6"/>
+      <path d="M 94 38 L 80 96 L 88 96 L 102 38 Z" fill="#ff2bd6"/>
+      <circle cx="34" cy="106" r="4" fill="#a6ff2b"/>
+      <circle cx="48" cy="106" r="4" fill="#ffb300"/>
+      <circle cx="62" cy="106" r="4" fill="#5f7099"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="app">
+  <header>
+    <svg class="mark"><use href="#vc-logo"/></svg>
+    <span class="logo">VERSECAM<span>//</span>DESK</span>
+    <span class="project" id="project" title="Ctrl+P: cambiar de proyecto"></span>
+    <span class="clock" id="clock"></span>
+    <span class="spacer"></span>
+    <span class="voice off" id="voice">voice off</span>
+  </header>
+
+  <div class="body">
+    <div class="left">
+      <div class="cards" id="cards"></div>
+      <div class="services" id="services" style="display:none"></div>
+    </div>
+    <div class="right">
+      <div class="tabs" id="tabs"></div>
+      <div class="termwrap">
+        <div id="term"></div>
+        <div id="caret"></div>
+        <div class="placeholder" id="placeholder" style="display:none">
+          <div>sin terminal en este worker</div>
+          <div><b style="color:var(--cyan)">Ctrl+S</b> inicia el agente &nbsp;·&nbsp; <b style="color:var(--cyan)">Ctrl+J/K</b> cambia de worker</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span><b>C-p</b> proyecto</span>
+    <span><b>C-j/k</b> worker</span>
+    <span><b>C-h/l</b> pestañas</span>
+    <span><b>C-a</b> terminal</span>
+    <span><b>C-s</b> servicios</span>
+    <span><b>C-d</b> archivos</span>
+    <span><b>C-t</b> jira</span>
+    <span><b>C-g</b> github</span>
+    <span><b>C-v</b> pegar</span>
+    <span><b>C-S-v</b> leer</span>
+    <span><b>C-S-l</b> voz</span>
+    <span>todo lo demas va directo a la terminal</span>
+    <span class="spacer"></span>
+    <span class="msg" id="msg"></span>
+  </footer>
+</div>
+
+<div id="projects">
+  <div class="pj-box">
+    <div class="pj-hero">
+      <svg class="mark"><use href="#vc-logo"/></svg>
+      <div>
+        <div class="t">VERSE<span>CAM</span></div>
+        <div class="s">agentes de terminal sobre tmux · claude · codex · kimi · muse</div>
+      </div>
+    </div>
+    <div class="pj-list" id="pj-list"></div>
+    <div class="pj-foot" id="pj-foot"></div>
+  </div>
+</div>
+
+<div id="assoc">
+  <div class="mini-box">
+    <h4 id="as-title">Asociar ticket a worktree</h4>
+    <div id="as-list" style="max-height:50vh;overflow-y:auto"></div>
+    <div class="mini-foot"><b>j/k</b> elegir · <b>enter</b> asociar · <b>esc</b> cancelar</div>
+  </div>
+</div>
+
+<div id="launcher">
+  <div class="mini-box">
+    <h4>Nueva terminal</h4>
+    <div id="ln-list"></div>
+    <div class="mini-foot"><b>j/k</b> elegir · <b>enter</b> abrir · <b>esc</b> cancelar · nada se lanza solo</div>
+  </div>
+</div>
+
+<div id="svcpanel">
+  <div class="exp-box">
+    <div class="exp-head" id="sv-head"></div>
+    <div class="sv-body" id="sv-body">
+      <div class="sv-list" id="sv-list"></div>
+      <div class="sv-logs" id="sv-logs"></div>
+      <div class="sv-panes" id="sv-panes"></div>
+    </div>
+    <div class="sv-diagram" id="sv-diagram" style="display:none"></div>
+    <div class="exp-foot" id="sv-foot">
+      <b>j/k</b> servicio &middot; <b>s</b> start &middot; <b>x</b> stop &middot; <b>R</b> restart &middot;
+      <b>enter</b> fijar en mosaico &middot; <b>a</b> diagrama &middot; <b>J/K u f b</b> scroll &middot;
+      <b>q/esc/C-s</b> cerrar
+    </div>
+  </div>
+</div>
+
+<div id="github">
+  <div class="exp-box">
+    <div class="exp-head" id="gh-head"></div>
+    <div class="gh-body" id="gh-body"></div>
+    <div class="exp-foot">
+      <b>j/k J/K u f b</b> scroll &middot; <b>r</b> refrescar PRs (github) &middot; <b>q/esc/C-g</b> cerrar
+    </div>
+  </div>
+</div>
+
+<div id="jira">
+  <div class="exp-box">
+    <div class="exp-head" id="jr-head"></div>
+    <div class="jr-board" id="jr-board"></div>
+    <div class="jr-detail" id="jr-detail" style="display:none"></div>
+    <div class="exp-foot">
+      <b>j/k</b> ticket &middot; <b>h/l</b> columna &middot; <b>s</b> fases/sprint &middot; <b>enter</b> leer &middot;
+      <b>w</b> crear worktree &middot; <b>a</b> asociar a worktree &middot;
+      <b>r</b> refrescar &middot; <b>q/esc/C-t</b> cerrar
+    </div>
+  </div>
+</div>
+
+<div id="explorer">
+  <div class="exp-box">
+    <div class="exp-head" id="exp-head"></div>
+    <div class="exp-body">
+      <div class="exp-tree" id="exp-tree"></div>
+      <div class="exp-code" id="exp-code"><div class="exp-empty">muevete con j/k: el archivo se muestra aqui</div></div>
+    </div>
+    <div class="exp-foot">
+      <b>j/k</b> archivo &middot; <b>l/enter</b> carpeta &middot; <b>h</b> colapsar &middot;
+      <b>J/K u f b</b> codigo &middot; <b>a</b> rama/todo &middot; <b>q/esc/C-d</b> cerrar &middot;
+      el codigo se recarga solo si la IA lo cambia
+    </div>
+  </div>
+</div>
+
+<script>
+const state = {
+  workers: [], selected: null,
+  sessions: [], active: null,
+  ready: false, project: "", // hay proyecto abierto: hasta entonces solo vive el selector
+  cols: 0, rows: 0, keyQueue: Promise.resolve()
+};
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function msg(text) {
+  document.getElementById("msg").textContent = text || "";
+  clearTimeout(msg._t);
+  if (text) msg._t = setTimeout(() => msg(""), 4000);
+}
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+  return data;
+}
+
+// --- ANSI a HTML (mismo interprete del panel web) --------------------------
+const ANSI16 = [
+  "#3b4763", "#ff3355", "#a6ff2b", "#ffb300", "#3d9bff", "#ff2bd6", "#00f0ff", "#c8d6f0",
+  "#5f7099", "#ff6b81", "#ccff7a", "#ffd166", "#7ab8ff", "#ff7ae6", "#7af5ff", "#ffffff"
+];
+function ansiColor(code) {
+  if (code < 16) return ANSI16[code];
+  if (code < 232) {
+    const n = code - 16, level = v => [0, 95, 135, 175, 215, 255][v];
+    return `rgb(${level(Math.floor(n / 36))},${level(Math.floor(n / 6) % 6)},${level(n % 6)})`;
+  }
+  const gray = 8 + (code - 232) * 10;
+  return `rgb(${gray},${gray},${gray})`;
+}
+function ansiToHtml(text) {
+  if (!text) return "";
+  let style = { fg: null, bg: null, bold: false, dim: false, italic: false, underline: false, inverse: false };
+  let html = "", buffer = "";
+  const flush = () => {
+    if (!buffer) return;
+    const body = esc(buffer);
+    const css = [];
+    let fg = style.fg, bg = style.bg;
+    if (style.inverse) { const t = fg; fg = bg || "#02030a"; bg = t || "#c8d6f0"; }
+    if (fg) css.push("color:" + fg);
+    if (bg) css.push("background:" + bg);
+    if (style.bold) css.push("font-weight:700");
+    if (style.dim) css.push("opacity:.6");
+    if (style.italic) css.push("font-style:italic");
+    if (style.underline) css.push("text-decoration:underline");
+    html += css.length ? `<span style="${css.join(";")}">${body}</span>` : body;
+    buffer = "";
+  };
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "\x1b") { buffer += text[i]; continue; }
+    const rest = text.slice(i);
+    const sgr = /^\x1b\[([0-9;]*)m/.exec(rest);
+    if (!sgr) {
+      const other = /^\x1b(\][^\x07\x1b]*(\x07|\x1b\\)|[@-Z\\-_]|\[[0-?]*[ -\/]*[@-~])/.exec(rest);
+      i += other ? other[0].length - 1 : 1;
+      continue;
+    }
+    flush();
+    i += sgr[0].length - 1;
+    const codes = sgr[1] === "" ? [0] : sgr[1].split(";").map(Number);
+    for (let k = 0; k < codes.length; k++) {
+      const c = codes[k];
+      if (c === 0) style = { fg: null, bg: null, bold: false, dim: false, italic: false, underline: false, inverse: false };
+      else if (c === 1) style.bold = true;
+      else if (c === 2) style.dim = true;
+      else if (c === 3) style.italic = true;
+      else if (c === 4) style.underline = true;
+      else if (c === 7) style.inverse = true;
+      else if (c === 22) { style.bold = false; style.dim = false; }
+      else if (c === 23) style.italic = false;
+      else if (c === 24) style.underline = false;
+      else if (c === 27) style.inverse = false;
+      else if (c === 39) style.fg = null;
+      else if (c === 49) style.bg = null;
+      else if (c >= 30 && c <= 37) style.fg = ANSI16[c - 30];
+      else if (c >= 40 && c <= 47) style.bg = ANSI16[c - 40];
+      else if (c >= 90 && c <= 97) style.fg = ANSI16[c - 90 + 8];
+      else if (c >= 100 && c <= 107) style.bg = ANSI16[c - 100 + 8];
+      else if (c === 38 || c === 48) {
+        const target = c === 38 ? "fg" : "bg";
+        if (codes[k + 1] === 5) { style[target] = ansiColor(codes[k + 2]); k += 2; }
+        else if (codes[k + 1] === 2) { style[target] = `rgb(${codes[k + 2]},${codes[k + 3]},${codes[k + 4]})`; k += 4; }
+      }
+    }
+  }
+  flush();
+  return html;
+}
+
+// --- Workers (tarjetas) ----------------------------------------------------
+function humanMem(kb) {
+  if (!kb) return "";
+  if (kb < 1024 * 1024) return Math.floor(kb / 1024) + "M";
+  return (kb / 1024 / 1024).toFixed(1) + "G";
+}
+
+function orderedWorkers() {
+  return state.workers;
+}
+
+function cardClass(w) {
+  const cls = ["card"];
+  if (w.agent.status === "working") cls.push("working");
+  else if (w.agent.status === "waiting") cls.push("waiting");
+  else if (w.agent.status === "sin agente") cls.push("anomalo");
+  else cls.push("stopped");
+  if (w.id === state.selected) cls.push("selected");
+  return cls.join(" ");
+}
+
+function statusLabel(w) {
+  const a = w.agent;
+  if (a.status === "working") {
+    let t = "● work";
+    if (a.activity) t += " " + a.activity;
+    if (a.elapsed_sec) t += " " + a.elapsed_sec + "s";
+    return t;
+  }
+  if (a.status === "waiting") return "○ wait";
+  if (a.status === "sin agente") return "sin agente";
+  if ((w.externals || []).length) return (w.externals.length) + " suelto";
+  return "-";
+}
+
+// lastUse: fecha y hora de la ultima actividad del worker, compacta ("hoy
+// 13:57" o "05/08 22:10").
+function lastUse(epoch) {
+  if (!epoch) return "";
+  const d = new Date(epoch * 1000);
+  const hm = d.toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const today = new Date();
+  if (d.toDateString() === today.toDateString()) return "hoy " + hm;
+  const dm = String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0");
+  return dm + " " + hm;
+}
+
+// Chips de color por umbral: la info de la tarjeta se lee de un vistazo.
+function ctxChip(pct) {
+  if (!pct) return "";
+  const cls = pct >= 85 ? "bad" : pct >= 60 ? "warn" : "info";
+  return `<span class="chip ${cls}">ctx ${pct}%</span>`;
+}
+function memChip(kb) {
+  if (!kb) return "";
+  const gb = kb / 1024 / 1024;
+  const cls = gb >= 4 ? "bad" : gb >= 2 ? "warn" : "";
+  return `<span class="chip ${cls}">mem ${humanMem(kb)}</span>`;
+}
+function svcChip(up, all) {
+  if (!all) return "";
+  return `<span class="chip ${up > 0 ? "ok" : ""}">svc ${up}/${all}</span>`;
+}
+
+// stBadge: el estado del agente como pildora solida (verde trabajando,
+// ambar esperando, roja anomala, gris apagada).
+function stBadge(w) {
+  const a = w.agent;
+  if (a.status === "working") {
+    return { cls: "working", txt: "work" + (a.elapsed_sec ? " " + a.elapsed_sec + "s" : "") };
+  }
+  if (a.status === "waiting") return { cls: "waiting", txt: "wait" };
+  if (a.status === "sin agente") return { cls: "anomalo", txt: "sin agente" };
+  if ((w.externals || []).length) return { cls: "working", txt: w.externals.length + " suelto" };
+  return { cls: "off", txt: "off" };
+}
+
+const ATOM_ICON = `<span class="atom"><svg viewBox="0 0 24 24"><circle class="nuc" cx="12" cy="12" r="2.4" fill="#00f0ff"/><g class="orb"><ellipse cx="12" cy="12" rx="10" ry="4" fill="none" stroke="rgba(0,240,255,.4)" stroke-width="1"/><circle cx="22" cy="12" r="1.7" fill="#ff2bd6"/></g><g class="orb orb2"><g transform="rotate(62 12 12)"><ellipse cx="12" cy="12" rx="10" ry="4" fill="none" stroke="rgba(255,43,214,.35)" stroke-width="1"/><circle cx="22" cy="12" r="1.7" fill="#a6ff2b"/></g></g><path class="bolt" d="M1 4 L4.5 6 L2 8.5 L5 10" stroke="#00f0ff"/><path class="bolt b2" d="M23 14 L19.5 15.5 L22.5 18 L19 20" stroke="#ffef5e"/><path class="bolt b3" d="M14 -1 L11.5 2 L15 3.5 L12.5 6" stroke="#ff2bd6"/></svg></span>`;
+
+function renderCards() {
+  const cards = orderedWorkers().map(w => {
+    const task = (w.agent.running && w.agent.task) ? w.agent.task : w.description;
+    const agents = (w.agents || []).length;
+    const used = lastUse(w.last_activity);
+    const st = stBadge(w);
+    const fullName = !w.is_principal && w.id !== w.ticket ? w.id : "";
+    return `
+      <div class="${cardClass(w)}" data-id="${esc(w.id)}">
+        <div class="head">
+          <span class="ticket">${esc(w.ticket)}</span>
+          <span class="stbadge ${st.cls}">${esc(st.txt)}</span>
+          ${agents > 1 ? `<span class="status" style="color:var(--cyan)">x${agents}</span>` : ""}
+          <span class="rightside">
+            ${w.id === state.selected ? `<span class="here">aqui</span>` : ""}
+            ${w.agent.status === "working" ? ATOM_ICON : ""}
+          </span>
+        </div>
+        ${fullName ? `<div class="wname">${esc(fullName)}</div>` : ""}
+        ${task ? `<div class="task">${esc(task)}</div>` : ""}
+        <div class="meta">
+          ${w.branch ? `<span class="chip branch">${esc(w.branch)}</span>` : ""}
+          ${ctxChip(w.agent.ctx_pct)}
+          ${memChip(w.mem_kb)}
+          ${svcChip(w.services_up, w.services_all)}
+          ${used ? `<span class="chip">${esc(used)}</span>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+  document.getElementById("cards").innerHTML = cards;
+  const sel = document.querySelector(".card.selected");
+  if (sel) sel.scrollIntoView({ block: "nearest" });
+}
+
+function renderServices() {
+  const el = document.getElementById("services");
+  const w = state.workers.find(x => x.id === state.selected);
+  const services = ((w && w.services) || []).filter(s => s.name !== "voice" && s.name !== "voz");
+  const running = services.filter(s => s.running);
+  if (!running.length) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  el.innerHTML = `<h3>Servicios ${running.length}/${services.length}</h3>` +
+    running.slice(0, 10).map(s => `
+      <div class="svc">
+        <span class="dot"></span>
+        <span class="name">${esc(s.name)}</span>
+        <span class="run">${s.kind ? esc(s.kind) : "running"}</span>
+        <span class="mem">${s.kind ? (s.ports || []).map(p => ":" + p).join(" ") : humanMem(s.mem_kb)}</span>
+      </div>`).join("") +
+    (running.length > 10 ? `<div class="svc more">+ ${running.length - 10} corriendo mas</div>` : "") +
+    (services.length > running.length ? `<div class="svc more">+ ${services.length - running.length} apagados</div>` : "");
+}
+
+const voiceLive = { on: false, available: false };
+
+function renderVoice() {
+  const el = document.getElementById("voice");
+  let svc = null;
+  for (const w of state.workers) {
+    for (const s of (w.services || [])) {
+      if ((s.name === "voice" || s.name === "voz") && (!svc || s.running)) svc = s;
+    }
+  }
+  const base = svc && svc.running ? "voice ● " + humanMem(svc.mem_kb) : "voice off";
+  const live = voiceLive.on ? "  · en vivo ♪" : "";
+  el.className = "voice " + ((svc && svc.running) || voiceLive.on ? "on" : "off");
+  el.textContent = base + live;
+}
+
+async function pollVoiceState() {
+  try {
+    const data = await api("/api/voice");
+    voiceLive.on = !!data.on;
+    voiceLive.available = !!data.available;
+    renderVoice();
+  } catch (e) { /* el panel sigue vivo */ }
+}
+
+async function toggleVoice() {
+  try {
+    const data = await api("/api/voice/toggle");
+    voiceLive.on = !!data.on;
+    msg(data.on ? "voz en vivo: leere cada respuesta al terminar el turno" : "voz apagada");
+    renderVoice();
+  } catch (e) { msg(e.message); }
+}
+
+async function speakLast() {
+  if (!state.active) { msg("no hay terminal activa que leer"); return; }
+  try {
+    await api(`/api/workers/${encodeURIComponent(state.selected)}/sessions/${encodeURIComponent(state.active)}/speak`);
+    msg("leyendo el ultimo mensaje...");
+  } catch (e) { msg(e.message); }
+}
+
+async function loadWorkers() {
+  const data = await api("/api/workers");
+  state.workers = data.workers || [];
+  if (!state.selected && state.workers.length) {
+    const busy = state.workers.find(w => w.agent.running);
+    state.selected = (busy || state.workers[0]).id;
+    await loadSessions(true);
+  }
+  renderCards(); renderServices(); renderVoice();
+  // El panel de servicios abierto sigue el pulso del refresco: un contenedor
+  // que cambia de estado se ve sin tocar nada. Los logs no se tocan aqui para
+  // no pelear con el scroll manual.
+  if (svcp.open) { renderServicesPanel(); renderPanes(); if (svcp.diagram) renderDiagram(); }
+}
+
+// --- Pestañas / sesiones ---------------------------------------------------
+async function loadSessions(pickDefault) {
+  if (!state.selected) return;
+  try {
+    state.sessions = await api(`/api/workers/${encodeURIComponent(state.selected)}/sessions`) || [];
+  } catch (e) { state.sessions = []; }
+  if (pickDefault || !state.sessions.find(s => s.session === state.active)) {
+    const w = state.workers.find(x => x.id === state.selected);
+    const agentSess = w && w.agent.running ? w.agent.session : null;
+    const found = state.sessions.find(s => s.session === agentSess) || state.sessions[0];
+    state.active = found ? found.session : null;
+  }
+  renderTabs();
+}
+
+// Iconos inline de cada CLI: el spark de Claude (Anthropic) y la K de Kimi.
+const CLI_ICONS = {
+  claude: `<svg class="tab-ico" viewBox="0 0 24 24"><path fill="#d97757" d="M12 1.5l2 6.7 6.7-2-4.7 5.3 4.7 5.3-6.7-2-2 6.7-2-6.7-6.7 2 4.7-5.3-4.7-5.3 6.7 2z"/></svg>`,
+  kimi: `<svg class="tab-ico" viewBox="0 0 24 24"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="#0d1117"/><path fill="#25e2a4" d="M7 4.5h3.2v6.1L15.4 4.5h4L13.6 11l6 8.5h-4l-4.2-6.2-1.2 1.4v4.8H7z"/></svg>`
+};
+
+function renderTabs() {
+  const tabs = state.sessions.map(s => {
+    const icon = s.kind === "agent" ? (CLI_ICONS[s.cli] || CLI_ICONS.claude) : "";
+    const profile = s.profile ? ` <span class="tab-prof">${esc(s.profile)}</span>` : "";
+    return `<span class="tab ${s.session === state.active ? "active" : ""}">${icon}${esc(s.label)}${profile}</span>`;
+  }).join("");
+  document.getElementById("tabs").innerHTML = tabs +
+    (state.sessions.length ? `<span class="hint">C-h/l cambia de pestaña</span>` : "");
+  document.getElementById("placeholder").style.display = state.active ? "none" : "flex";
+  if (!state.active) { document.getElementById("term").innerHTML = ""; document.getElementById("caret").style.display = "none"; }
+}
+
+function cycleTab(delta) {
+  if (state.sessions.length < 2) return;
+  let idx = state.sessions.findIndex(s => s.session === state.active);
+  idx = (idx + delta + state.sessions.length) % state.sessions.length;
+  state.active = state.sessions[idx].session;
+  renderTabs();
+  pollScreen();
+}
+
+function moveWorker(delta) {
+  const ids = orderedWorkers().map(w => w.id);
+  if (!ids.length) return;
+  let idx = ids.indexOf(state.selected);
+  idx = idx < 0 ? 0 : (idx + delta + ids.length) % ids.length;
+  state.selected = ids[idx];
+  renderCards(); renderServices();
+  loadSessions(true).then(pollScreen);
+}
+
+// --- Terminal: captura + cursor -------------------------------------------
+function measure() {
+  const term = document.getElementById("term");
+  const probe = document.createElement("span");
+  probe.textContent = "XXXXXXXXXX";
+  probe.style.visibility = "hidden";
+  term.appendChild(probe);
+  const chW = probe.getBoundingClientRect().width / 10 || 7.8;
+  term.removeChild(probe);
+  state.cols = Math.max(20, Math.floor(term.clientWidth / chW));
+  state.rows = Math.max(5, Math.floor(term.clientHeight / 17));
+  state.chW = chW;
+}
+
+let polling = false;
+// paintTerm actualiza SOLO las filas que cambiaron. La terminal se refresca 8
+// veces por segundo, pero entre un refresco y el siguiente casi siempre cambian
+// una o dos lineas (el spinner del agente, la statusline): rehacer el innerHTML
+// entero repinta el bloque completo y eso es lo que se ve como parpadeo.
+// Se reconstruye de golpe solo cuando cambia la pestaña o el numero de filas.
+const termCache = { key: "", lines: [] };
+
+function paintTerm(term, lines, key) {
+  if (termCache.key !== key || termCache.lines.length !== lines.length ||
+      term.childElementCount !== lines.length) {
+    term.innerHTML = lines.map(l => `<div class="row">${ansiToHtml(l)}</div>`).join("");
+    termCache.key = key;
+    termCache.lines = lines.slice();
+    return;
+  }
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i] === termCache.lines[i]) continue;
+    term.children[i].innerHTML = ansiToHtml(lines[i]);
+  }
+  termCache.lines = lines.slice();
+}
+
+async function pollScreen() {
+  if (!state.active || polling) return;
+  polling = true;
+  try {
+    const data = await api(`/api/workers/${encodeURIComponent(state.selected)}/sessions/${encodeURIComponent(state.active)}/screen?cols=${state.cols}&rows=${state.rows}`);
+    const term = document.getElementById("term");
+    // Si el window de tmux es mas alto que el visor (otro cliente atado
+    // impone su tamano), se ancla la vista al FONDO: ahi viven el prompt,
+    // el modo y la statusline.
+    const lines = data.lines || [];
+    const offset = Math.max(0, lines.length - state.rows);
+    paintTerm(term, lines.slice(offset), state.selected + "/" + state.active);
+    const caret = document.getElementById("caret");
+    const cy = data.y - offset;
+    if (data.cursor && cy >= 0) {
+      caret.style.display = "block";
+      caret.style.left = (8 + data.x * state.chW) + "px";
+      caret.style.top = (8 + cy * 17 + 1) + "px";
+    } else {
+      caret.style.display = "none";
+    }
+  } catch (e) { /* la sesion pudo morir; el proximo loadSessions lo resuelve */ }
+  polling = false;
+}
+
+// --- Teclado: todo va a la terminal, navegacion con Ctrl -------------------
+function keyHex(e) {
+  const out = [];
+  const push = (...bytes) => out.push(...bytes);
+  // WebKitGTK reporta Shift+Tab como "ISO_Left_Tab": aceptar ambas formas.
+  if ((e.key === "Tab" && e.shiftKey) || e.key === "ISO_Left_Tab") push(0x1b, 0x5b, 0x5a);
+  else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    for (const b of new TextEncoder().encode(e.key)) push(b);
+  } else if (e.ctrlKey && !e.altKey && e.key.length === 1) {
+    const c = e.key.toLowerCase().charCodeAt(0);
+    if (c >= 97 && c <= 122) push(c - 96);
+    else return null;
+  } else {
+    switch (e.key) {
+      case "Enter": push(0x0d); break;
+      case "Backspace": push(0x7f); break;
+      case "Tab": push(0x09); break;
+      case "Escape": push(0x1b); break;
+      case "ArrowUp": push(0x1b, 0x5b, 0x41); break;
+      case "ArrowDown": push(0x1b, 0x5b, 0x42); break;
+      case "ArrowRight": push(0x1b, 0x5b, 0x43); break;
+      case "ArrowLeft": push(0x1b, 0x5b, 0x44); break;
+      case "Home": push(0x1b, 0x5b, 0x48); break;
+      case "End": push(0x1b, 0x5b, 0x46); break;
+      case "Delete": push(0x1b, 0x5b, 0x33, 0x7e); break;
+      case "PageUp": push(0x1b, 0x5b, 0x35, 0x7e); break;
+      case "PageDown": push(0x1b, 0x5b, 0x36, 0x7e); break;
+      default: return null;
+    }
+  }
+  return out.map(b => b.toString(16).padStart(2, "0"));
+}
+
+function sendHex(hex) {
+  if (!state.active || !hex || !hex.length) return;
+  const id = state.selected, sess = state.active;
+  // GET con query: el webview pierde cuerpos de POST hacia su esquema
+  // interno en algunas versiones de WebKit. Cola: requests en paralelo
+  // podrian llegar desordenados y revolver lo que escribes.
+  state.keyQueue = state.keyQueue.then(() =>
+    api(`/api/workers/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sess)}/keys?hex=${hex.join(",")}`)
+      .then(() => pollScreen())
+      .catch(err => msg("teclas: " + err.message))
+  );
+}
+
+async function startAgent() {
+  if (!state.selected) return;
+  try {
+    // GET: el webview pierde cuerpos de POST hacia su esquema interno.
+    const res = await api(`/api/workers/${encodeURIComponent(state.selected)}/agent/start`);
+    msg("agente lanzado en " + (res.session || ""));
+    setTimeout(async () => {
+      await loadWorkers().catch(() => {});
+      await loadSessions(false);
+      if (res.session) { state.active = res.session; renderTabs(); pollScreen(); }
+    }, 900);
+  } catch (e) { msg(e.message); }
+}
+
+// --- Explorador flotante (Ctrl+D) ------------------------------------------
+const exp = {
+  open: false, all: false, changed: {}, fileRepo: {}, branches: {},
+  adds: 0, dels: 0, root: null, flat: [], sel: 0, fileRel: null, mtime: 0
+};
+
+function toggleExplorer() {
+  exp.open = !exp.open;
+  document.getElementById("explorer").classList.toggle("open", exp.open);
+  if (exp.open) loadExplorer();
+}
+
+async function loadExplorer() {
+  const data = await api(`/api/workers/${encodeURIComponent(state.selected)}/changes`).catch(() => null);
+  exp.changed = {}; exp.fileRepo = {};
+  if (data) {
+    (data.files || []).forEach(f => { exp.changed[f.rel] = f.status; exp.fileRepo[f.rel] = f.repo; });
+    exp.branches = data.branches || {};
+    exp.adds = data.adds || 0;
+    exp.dels = data.dels || 0;
+  }
+  exp.all = !Object.keys(exp.changed).length; // sin cambios: arbol completo
+  await buildTree();
+  exp.sel = 0;
+  renderExplorer();
+  previewSelected();
+}
+
+function node(name, rel, dir) {
+  return { name, rel, dir, expanded: false, loaded: false, children: [] };
+}
+
+async function loadDir(n) {
+  if (n.loaded) return;
+  n.loaded = true;
+  const data = await api(`/api/workers/${encodeURIComponent(state.selected)}/ls?rel=${encodeURIComponent(n.rel)}`).catch(() => ({ entries: [] }));
+  const dirs = [], files = [];
+  for (const it of (data.entries || [])) {
+    const child = node(it.name, n.rel ? n.rel + "/" + it.name : it.name, it.dir);
+    (it.dir ? dirs : files).push(child);
+  }
+  const byName = (a, b) => a.name < b.name ? -1 : 1;
+  n.children = dirs.sort(byName).concat(files.sort(byName));
+}
+
+async function buildTree() {
+  exp.root = node("", "", true);
+  exp.root.expanded = true;
+  if (exp.all) {
+    await loadDir(exp.root);
+  } else {
+    // Solo lo que trae la rama, todo expandido, con cadenas de carpetas
+    // comprimidas (a/b/c) como en el TUI.
+    exp.root.loaded = true;
+    const index = { "": exp.root };
+    for (const rel of Object.keys(exp.changed).sort()) {
+      const parts = rel.split("/");
+      let parent = exp.root, parentRel = "";
+      parts.forEach((part, i) => {
+        const childRel = parentRel ? parentRel + "/" + part : part;
+        let n = index[childRel];
+        if (!n) {
+          n = node(part, childRel, i < parts.length - 1);
+          n.loaded = true;
+          // Cerradas de entrada: cada quien abre lo que necesita.
+          n.expanded = false;
+          index[childRel] = n;
+          parent.children.push(n);
+        }
+        parent = n; parentRel = childRel;
+      });
+    }
+    compress(exp.root);
+  }
+  flattenExp();
+}
+
+function compress(n) {
+  for (const child of n.children) {
+    while (child.dir && child.children.length === 1 && child.children[0].dir) {
+      const gc = child.children[0];
+      child.name = child.name + "/" + gc.name;
+      child.rel = gc.rel;
+      child.children = gc.children;
+    }
+    compress(child);
+  }
+}
+
+function flattenExp() {
+  exp.flat = [];
+  const walk = (n, depth) => {
+    for (const child of n.children) {
+      exp.flat.push({ n: child, depth });
+      if (child.dir && child.expanded) walk(child, depth + 1);
+    }
+  };
+  walk(exp.root, 0);
+  if (exp.sel >= exp.flat.length) exp.sel = 0;
+}
+
+// --- Iconos estilo material: carpetas + lenguaje por extension -------------
+const svgIco = inner => `<svg class="fico" viewBox="0 0 24 24">${inner}</svg>`;
+const badge = (bg, txt, fg) =>
+  svgIco(`<rect x="2" y="3" width="20" height="18" rx="4" fill="${bg}"/>` +
+    `<text x="12" y="16.5" font-size="9.5" font-family="monospace" font-weight="700" text-anchor="middle" fill="${fg || "#fff"}">${txt}</text>`);
+
+const ICONS = {
+  folder: svgIco(`<path fill="#dcb67a" d="M10.2 5l1.6 2H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/>`),
+  folderOpen: svgIco(`<path fill="#b99c62" d="M10.2 5l1.6 2H20a2 2 0 0 1 2 2v1H7.5L4 20a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/>` +
+    `<path fill="#e8c987" d="M7.8 11H23l-3 9H4.6z"/>`),
+  file: svgIco(`<path fill="#8a97ad" d="M6 2h8l4 4v16H6z"/><path fill="#b8c2d4" d="M14 2l4 4h-4z"/>`),
+  go: badge("#00add8", "GO"),
+  js: badge("#f7df1e", "JS", "#1a1a00"),
+  ts: badge("#3178c6", "TS"),
+  py: badge("#3572a5", "PY", "#ffd845"),
+  php: badge("#777bb3", "php"),
+  html: badge("#e44d26", "&lt;&gt;"),
+  css: badge("#42a5f5", "#"),
+  scss: badge("#cd6799", "#"),
+  json: badge("#fbc02d", "{}", "#3a2c00"),
+  md: badge("#42a5f5", "M", "#fff"),
+  sql: svgIco(`<ellipse cx="12" cy="6" rx="8" ry="3.4" fill="#ffca28"/>` +
+    `<path fill="#e6ac00" d="M4 6v12c0 1.9 3.6 3.4 8 3.4s8-1.5 8-3.4V6c0 1.9-3.6 3.4-8 3.4S4 7.9 4 6z"/>`),
+  shell: svgIco(`<rect x="2" y="3" width="20" height="18" rx="3" fill="#1e2a38"/>` +
+    `<path stroke="#4caf50" stroke-width="2" fill="none" d="M6 9l4 3.5L6 16"/><path stroke="#4caf50" stroke-width="2" d="M12 16h6"/>`),
+  gear: svgIco(`<circle cx="12" cy="12" r="4" fill="none" stroke="#90a4ae" stroke-width="2.4"/>` +
+    `<path stroke="#90a4ae" stroke-width="2.4" d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4M5 5l2.8 2.8M16.2 16.2L19 19M19 5l-2.8 2.8M7.8 16.2L5 19"/>`),
+  test: svgIco(`<path fill="#4caf50" d="M10 3h4v2l-1 1v4l5.5 9a2 2 0 0 1-1.7 3H7.2a2 2 0 0 1-1.7-3L11 10V6l-1-1z"/>`),
+  docker: badge("#2496ed", "\u{1F433}"),
+  git: badge("#f4511e", "git", "#fff"),
+  vue: badge("#41b883", "V", "#0d2e22"),
+  image: svgIco(`<rect x="2" y="4" width="20" height="16" rx="3" fill="#26a69a"/>` +
+    `<circle cx="8.5" cy="9.5" r="2" fill="#fff59d"/><path fill="#00695c" d="M4 18l5-6 4 4 3-3 4 5z"/>`),
+  pkg: badge("#8d6e63", "pkg"),
+  dart: badge("#0175c2", "D"),
+  java: badge("#e76f00", "J")
+};
+
+const EXT_ICONS = {
+  ".go": "go", ".js": "js", ".jsx": "js", ".mjs": "js", ".ts": "ts", ".tsx": "ts",
+  ".py": "py", ".php": "php", ".html": "html", ".vue": "vue", ".astro": "vue",
+  ".css": "css", ".scss": "scss", ".sass": "scss",
+  ".json": "json", ".md": "md", ".txt": "md", ".sql": "sql",
+  ".sh": "shell", ".bash": "shell", ".zsh": "shell",
+  ".yml": "gear", ".yaml": "gear", ".toml": "gear", ".ini": "gear", ".conf": "gear", ".env": "gear",
+  ".png": "image", ".jpg": "image", ".jpeg": "image", ".svg": "image", ".gif": "image", ".ico": "image",
+  ".lock": "pkg", ".sum": "pkg", ".mod": "pkg",
+  ".dart": "dart", ".java": "java", ".kt": "java"
+};
+
+function fileIcon(name) {
+  const lower = name.toLowerCase();
+  if (lower.includes("_test.") || lower.includes(".test.") || lower.includes(".spec.")) return ICONS.test;
+  if (lower.startsWith("dockerfile") || lower.startsWith("docker-compose")) return ICONS.docker;
+  if (lower.startsWith(".git")) return ICONS.git;
+  if (lower === "makefile") return ICONS.gear;
+  const dot = lower.lastIndexOf(".");
+  const ext = dot >= 0 ? lower.slice(dot) : "";
+  return ICONS[EXT_ICONS[ext]] || ICONS.file;
+}
+
+function renderExplorer() {
+  const w = state.workers.find(x => x.id === state.selected) || {};
+  const repo = exp.fileRel ? (exp.fileRepo[exp.fileRel] || "") : "";
+  const branch = exp.branches[repo] || Object.values(exp.branches)[0] || "";
+  document.getElementById("exp-head").innerHTML =
+    `<span class="t">EXPLORADOR</span>` +
+    `<span class="w">${esc(w.ticket || "")}</span>` +
+    (repo ? `<span class="p">${esc(repo)}</span>` : "") +
+    (branch ? `<span class="b">${esc(branch)}</span>` : "") +
+    `<span class="muted">${exp.all ? "arbol completo" : Object.keys(exp.changed).length + " archivos"}</span>` +
+    (exp.adds || exp.dels ? `<span class="adds">+${exp.adds}</span><span class="dels">-${exp.dels}</span>` : "") +
+    (exp.fileRel ? `<span class="file">${esc(exp.fileRel)}</span>` : "");
+
+  document.getElementById("exp-tree").innerHTML = exp.flat.map((item, i) => {
+    const n = item.n;
+    const pad = "&nbsp;".repeat(item.depth * 2);
+    const body = n.dir
+      ? `${n.expanded ? "▾" : "▸"} ${n.expanded ? ICONS.folderOpen : ICONS.folder}<span class="dirname">${esc(n.name)}/</span>`
+      : `&nbsp;&nbsp;${fileIcon(n.name)}<span class="st-${esc(exp.changed[n.rel] || "")}">${esc(n.name)}</span>` +
+        (exp.changed[n.rel] ? ` <span class="st-${esc(exp.changed[n.rel])}">${esc(exp.changed[n.rel])}</span>` : "");
+    return `<div class="exp-row ${i === exp.sel ? "sel" : ""}">${pad}${body}</div>`;
+  }).join("") || `<div class="exp-empty">carpeta vacia</div>`;
+
+  const sel = document.querySelector(".exp-row.sel");
+  if (sel) sel.scrollIntoView({ block: "nearest" });
+}
+
+async function previewSelected() {
+  const item = exp.flat[exp.sel];
+  if (!item || item.n.dir) {
+    exp.fileRel = null;
+    document.getElementById("exp-code").innerHTML =
+      `<div class="exp-empty">muevete con j/k: el archivo se muestra aqui</div>`;
+    renderExplorer();
+    return;
+  }
+  exp.fileRel = item.n.rel;
+  await fetchFile(true);
+  renderExplorer();
+}
+
+async function fetchFile(resetScroll) {
+  if (!exp.fileRel) return;
+  const rel = exp.fileRel;
+  const data = await api(`/api/workers/${encodeURIComponent(state.selected)}/file?rel=${encodeURIComponent(rel)}`).catch(() => null);
+  // Si te moviste con j/k mientras cargaba, esta respuesta ya no es la del
+  // archivo seleccionado: pintarla mostraria el anterior.
+  if (!data || rel !== exp.fileRel) return;
+  if (!resetScroll && data.mtime === exp.mtime) return;
+  exp.mtime = data.mtime;
+  const marks = new Set(data.marks || []);
+  const code = document.getElementById("exp-code");
+  const keep = code.scrollTop;
+  code.innerHTML = (data.lines || []).map((l, i) =>
+    `<div class="crow ${data.all_new || marks.has(i + 1) ? "mark" : ""}"><span class="ln">${i + 1}</span>${ansiToHtml(l)}</div>`
+  ).join("");
+  code.scrollTop = resetScroll ? 0 : keep;
+}
+
+async function explorerOpenNode() {
+  const item = exp.flat[exp.sel];
+  if (!item) return;
+  if (item.n.dir) {
+    if (!item.n.loaded && exp.all) await loadDir(item.n);
+    item.n.expanded = !item.n.expanded;
+    flattenExp();
+    renderExplorer();
+  }
+}
+
+function explorerCollapse() {
+  const item = exp.flat[exp.sel];
+  if (!item) return;
+  if (item.n.dir && item.n.expanded) {
+    item.n.expanded = false;
+    flattenExp(); renderExplorer();
+    return;
+  }
+  const parentRel = item.n.rel.includes("/") ? item.n.rel.slice(0, item.n.rel.lastIndexOf("/")) : "";
+  const idx = exp.flat.findIndex(x => x.n.dir && x.n.rel === parentRel);
+  if (idx >= 0) { exp.sel = idx; renderExplorer(); previewSelected(); }
+}
+
+function moveExpSel(delta) {
+  if (!exp.flat.length) return;
+  exp.sel = (exp.sel + delta + exp.flat.length) % exp.flat.length;
+  renderExplorer();
+  previewSelected();
+}
+
+function scrollCode(px) {
+  document.getElementById("exp-code").scrollTop += px;
+}
+
+function explorerKey(e) {
+  const page = document.getElementById("exp-code").clientHeight - 34;
+  switch (e.key) {
+    case "q": case "Escape": toggleExplorer(); break;
+    case "j": moveExpSel(1); break;
+    case "k": moveExpSel(-1); break;
+    case "g": exp.sel = 0; renderExplorer(); previewSelected(); break;
+    case "G": exp.sel = Math.max(0, exp.flat.length - 1); renderExplorer(); previewSelected(); break;
+    case "h": explorerCollapse(); break;
+    case "l": case "Enter": explorerOpenNode(); break;
+    case "a": exp.all = !exp.all; buildTree().then(() => { renderExplorer(); previewSelected(); }); break;
+    case "J": scrollCode(51); break;
+    case "K": scrollCode(-51); break;
+    case "u": scrollCode(-page / 2); break;
+    case "f": case " ": scrollCode(page); break;
+    case "b": scrollCode(-page); break;
+  }
+}
+
+// El visor sigue los cambios que la IA hace en disco.
+setInterval(() => { if (exp.open && exp.fileRel) fetchFile(false); }, 1500);
+
+// --- Panel de Jira (Ctrl+J): tickets por fase, con lectura completa --------
+const jira = { open: false, mode: "fases", issues: [], columns: [], col: 0, row: 0, detail: false };
+const JR_CATS = ["new", "indeterminate", "done"];
+
+// buildJiraColumns arma el tablero segun el modo: fases (statusCategory) o
+// sprint (activo primero, luego futuros, y Backlog para lo sin sprint).
+function buildJiraColumns() {
+  if (jira.mode === "sprint") {
+    const bySprint = new Map();
+    const backlog = [];
+    for (const issue of jira.issues) {
+      if (issue.sprint && (issue.sprint_state === "active" || issue.sprint_state === "future")) {
+        if (!bySprint.has(issue.sprint)) {
+          bySprint.set(issue.sprint, {
+            title: issue.sprint + (issue.sprint_state === "active" ? " · activo" : ""),
+            cls: issue.sprint_state === "active" ? "cat-done" : "cat-indeterminate",
+            state: issue.sprint_state, items: []
+          });
+        }
+        bySprint.get(issue.sprint).items.push(issue);
+      } else {
+        backlog.push(issue);
+      }
+    }
+    const cols = [...bySprint.values()].sort((a, b) =>
+      a.state === b.state ? (a.title < b.title ? -1 : 1) : a.state === "active" ? -1 : 1);
+    cols.push({ title: "Backlog", cls: "cat-new", items: backlog });
+    jira.columns = cols;
+  } else {
+    const names = ["Por hacer", "En curso", "Terminado"];
+    const cols = JR_CATS.map((cat, i) => ({ title: names[i], cls: "cat-" + cat, items: [] }));
+    for (const issue of jira.issues) {
+      cols[Math.max(0, JR_CATS.indexOf(issue.status_cat))].items.push(issue);
+    }
+    jira.columns = cols;
+  }
+  jira.col = 0;
+  jira.row = 0;
+  const first = jira.columns.findIndex(c => c.items.length);
+  if (first > 0) jira.col = first;
+}
+
+function toggleJira() {
+  jira.open = !jira.open;
+  document.getElementById("jira").classList.toggle("open", jira.open);
+  if (jira.open) { jira.detail = false; loadJira(false); }
+}
+
+async function loadJira(refresh) {
+  document.getElementById("jr-head").innerHTML =
+    `<span class="t">JIRA</span><span class="muted">consultando...</span>`;
+  let issues = [];
+  try {
+    issues = await api("/api/jira" + (refresh ? "?refresh=1" : ""));
+  } catch (e) {
+    document.getElementById("jr-head").innerHTML =
+      `<span class="t">JIRA</span><span class="dels">${esc(e.message)}</span>`;
+    document.getElementById("jr-board").innerHTML = "";
+    return;
+  }
+  jira.issues = issues || [];
+  buildJiraColumns();
+  renderJira();
+}
+
+function jrSelected() {
+  const col = jira.columns[jira.col];
+  return (col && col.items[jira.row]) || null;
+}
+
+function renderJira() {
+  const total = jira.issues.length;
+  const hasSprints = jira.issues.some(i => i.sprint);
+  document.getElementById("jr-head").innerHTML =
+    `<span class="t">JIRA</span>` +
+    `<span class="muted">${total} tickets asignados</span>` +
+    `<span class="chip info">${jira.mode === "sprint" ? "por sprint" : "por fase"}</span>` +
+    (jira.mode === "sprint" && !hasSprints ? `<span class="chip warn">sin dato de sprint</span>` : "") +
+    `<span class="muted" style="margin-left:auto">[s] fases/sprint · [r] refrescar</span>`;
+  const board = document.getElementById("jr-board");
+  board.style.display = "grid";
+  board.style.gridTemplateColumns = `repeat(${jira.columns.length}, minmax(240px, 1fr))`;
+  board.style.overflowX = "auto";
+  document.getElementById("jr-detail").style.display = "none";
+  board.innerHTML = jira.columns.map((col, ci) => `
+    <div class="jr-col ${col.cls}">
+      <h4>${esc(col.title)} (${col.items.length})</h4>
+      <div class="jr-cards">
+        ${col.items.map((issue, ri) => `
+          <div class="jr-card ${ci === jira.col && ri === jira.row ? "sel" : ""}">
+            <span class="k">${esc(issue.key)}</span>
+            <div class="s">${esc(issue.summary)}</div>
+            <div class="chips">
+              <span class="chip info">${esc(issue.status)}</span>
+              ${jira.mode === "fases" && issue.sprint ? `<span class="chip ${issue.sprint_state === "active" ? "ok" : ""}">${esc(issue.sprint)}</span>` : ""}
+              ${issue.priority ? `<span class="chip">${esc(issue.priority)}</span>` : ""}
+              ${issue.has_worker ? `<span class="chip ok">worker</span>` : ""}
+            </div>
+          </div>`).join("")}
+      </div>
+    </div>`).join("");
+  const sel = document.querySelector(".jr-card.sel");
+  if (sel) sel.scrollIntoView({ block: "nearest" });
+}
+
+async function openJiraDetail() {
+  const issue = jrSelected();
+  if (!issue) return;
+  jira.detail = true;
+  const box = document.getElementById("jr-detail");
+  document.getElementById("jr-board").style.display = "none";
+  box.style.display = "block";
+  box.innerHTML = `<div class="exp-empty">cargando ${esc(issue.key)}...</div>`;
+  try {
+    const d = await api("/api/jira/" + encodeURIComponent(issue.key));
+    const when = iso => iso ? new Date(iso).toLocaleString("es-CO", { hour12: false }) : "";
+    box.innerHTML = `
+      <h2>${esc(d.key)} — ${esc(d.summary)}</h2>
+      <div class="chips" style="display:flex;gap:5px;flex-wrap:wrap">
+        <span class="chip info">${esc(d.status)}</span>
+        ${d.priority ? `<span class="chip warn">${esc(d.priority)}</span>` : ""}
+        ${d.assignee ? `<span class="chip">${esc(d.assignee)}</span>` : ""}
+        <span class="chip">${esc(when(d.updated))}</span>
+        ${(d.labels || []).map(l => `<span class="chip ok">${esc(l)}</span>`).join("")}
+      </div>
+      <div class="jr-desc jr-rich">${d.description || `<span class="muted">(sin descripcion)</span>`}</div>
+      ${(d.comments || []).length ? `<h4 style="color:var(--cyan);font-size:11px;letter-spacing:2px;margin:18px 0 0">COMENTARIOS (${d.comments.length})</h4>` : ""}
+      ${(d.comments || []).map(c => `
+        <div class="jr-com">
+          <div class="a">${esc(c.author)} — ${esc(when(c.created))}</div>
+          <div class="txt jr-rich">${c.text}</div>
+        </div>`).join("")}`;
+    box.scrollTop = 0;
+  } catch (e) {
+    box.innerHTML = `<div class="exp-empty">${esc(e.message)}</div>`;
+  }
+}
+
+// --- Worktree desde el ticket: w crea, a asocia a uno existente ------------
+function slugify(text) {
+  return (text || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").slice(0, 4).join("-");
+}
+
+async function createWorktreeFromTicket() {
+  const issue = jrSelected();
+  if (!issue) return;
+  const slug = slugify(issue.summary);
+  const name = issue.key + (slug ? "-" + slug : "");
+  msg("creando worktree " + name + "...");
+  try {
+    const res = await api(`/api/worktrees/create?name=${encodeURIComponent(name)}`);
+    msg("worktree " + res.worker + " listo (vacio: [C-a] abre un agente para analizarlo)");
+    setTimeout(async () => {
+      await loadWorkers().catch(() => {});
+      state.selected = res.worker;
+      renderCards(); renderServices();
+      await loadSessions(true);
+      loadJira(false);
+    }, 800);
+  } catch (e) { msg(e.message); }
+}
+
+const assoc = { open: false, sel: 0, ticket: null };
+
+function toggleAssoc() {
+  assoc.open = !assoc.open;
+  document.getElementById("assoc").classList.toggle("open", assoc.open);
+  if (!assoc.open) return;
+  const issue = jrSelected();
+  if (!issue) { assoc.open = false; document.getElementById("assoc").classList.remove("open"); return; }
+  assoc.ticket = issue.key;
+  assoc.sel = 0;
+  document.getElementById("as-title").textContent = "Asociar " + issue.key + " a...";
+  renderAssoc();
+}
+
+function renderAssoc() {
+  document.getElementById("as-list").innerHTML = state.workers.map((w, i) => `
+    <div class="ln-row ${i === assoc.sel ? "sel" : ""}">
+      <span class="nm">${esc(w.ticket)}</span>
+      <span class="k">${esc(w.is_principal ? "workspace" : w.id)}</span>
+    </div>`).join("");
+  const sel = document.querySelector("#as-list .ln-row.sel");
+  if (sel) sel.scrollIntoView({ block: "nearest" });
+}
+
+async function assocSelected() {
+  const worker = state.workers[assoc.sel];
+  if (!worker || !assoc.ticket) return;
+  toggleAssoc();
+  try {
+    await api(`/api/workers/${encodeURIComponent(worker.id)}/tickets/add?ticket=${encodeURIComponent(assoc.ticket)}`);
+    msg(assoc.ticket + " asociado a " + worker.ticket);
+    loadJira(false);
+  } catch (e) { msg(e.message); }
+}
+
+function assocKey(e) {
+  const count = state.workers.length;
+  switch (e.key) {
+    case "q": case "Escape": toggleAssoc(); break;
+    case "j": if (count) { assoc.sel = (assoc.sel + 1) % count; renderAssoc(); } break;
+    case "k": if (count) { assoc.sel = (assoc.sel - 1 + count) % count; renderAssoc(); } break;
+    case "Enter": case "l": assocSelected(); break;
+  }
+}
+
+function jiraKey(e) {
+  const box = document.getElementById("jr-detail");
+  const page = box.clientHeight - 40;
+  if (jira.detail) {
+    switch (e.key) {
+      case "q": toggleJira(); break;
+      case "Escape": case "h": jira.detail = false; renderJira(); break;
+      case "J": case "j": box.scrollTop += 51; break;
+      case "K": case "k": box.scrollTop -= 51; break;
+      case "u": box.scrollTop -= page / 2; break;
+      case "f": case " ": box.scrollTop += page; break;
+      case "b": box.scrollTop -= page; break;
+    }
+    return;
+  }
+  const cols = jira.columns.length;
+  switch (e.key) {
+    case "q": case "Escape": toggleJira(); break;
+    case "j": if (jrSelected()) { jira.row = Math.min(jira.row + 1, jira.columns[jira.col].items.length - 1); renderJira(); } break;
+    case "k": jira.row = Math.max(0, jira.row - 1); renderJira(); break;
+    case "h": if (cols) { jira.col = (jira.col - 1 + cols) % cols; jira.row = 0; renderJira(); } break;
+    case "l": if (cols) { jira.col = (jira.col + 1) % cols; jira.row = 0; renderJira(); } break;
+    case "g": jira.row = 0; renderJira(); break;
+    case "G": jira.row = Math.max(0, (jira.columns[jira.col] || { items: [] }).items.length - 1); renderJira(); break;
+    case "s": jira.mode = jira.mode === "sprint" ? "fases" : "sprint"; buildJiraColumns(); renderJira(); break;
+    case "w": createWorktreeFromTicket(); break;
+    case "a": toggleAssoc(); break;
+    case "Enter": openJiraDetail(); break;
+    case "r": loadJira(true); break;
+  }
+}
+
+// --- Selector de terminal (Ctrl+A): perfil de agente o shell, a eleccion ---
+const launcher = { open: false, items: [], sel: 0 };
+
+async function toggleLauncher() {
+  launcher.open = !launcher.open;
+  document.getElementById("launcher").classList.toggle("open", launcher.open);
+  if (!launcher.open) return;
+  let profiles = [];
+  try { profiles = await api("/api/profiles"); } catch (e) { /* sin perfiles */ }
+  launcher.items = profiles.map(p => ({ kind: "agent", name: p.name, cli: p.cli }))
+    .concat([{ kind: "shell", name: "shell", cli: null }]);
+  launcher.sel = 0;
+  renderLauncher();
+}
+
+function renderLauncher() {
+  document.getElementById("ln-list").innerHTML = launcher.items.map((it, i) => `
+    <div class="ln-row ${i === launcher.sel ? "sel" : ""}">
+      ${it.kind === "agent" ? (CLI_ICONS[it.cli] || CLI_ICONS.claude) : ICONS.shell}
+      <span class="nm">${esc(it.name)}</span>
+      <span class="k">${it.kind === "agent" ? "agente" : "terminal en la raiz"}</span>
+    </div>`).join("");
+}
+
+async function launchSelected() {
+  const it = launcher.items[launcher.sel];
+  if (!it) return;
+  toggleLauncher();
+  try {
+    const res = it.kind === "shell"
+      ? await api(`/api/workers/${encodeURIComponent(state.selected)}/shell/start`)
+      : await api(`/api/workers/${encodeURIComponent(state.selected)}/agent/start?profile=${encodeURIComponent(it.name)}`);
+    msg((it.kind === "shell" ? "shell" : "agente " + it.name) + " en " + res.session);
+    setTimeout(async () => {
+      await loadSessions(false);
+      if (res.session) { state.active = res.session; renderTabs(); pollScreen(); }
+    }, 700);
+  } catch (e) { msg(e.message); }
+}
+
+function launcherKey(e) {
+  const count = launcher.items.length;
+  switch (e.key) {
+    case "q": case "Escape": toggleLauncher(); break;
+    case "j": if (count) { launcher.sel = (launcher.sel + 1) % count; renderLauncher(); } break;
+    case "k": if (count) { launcher.sel = (launcher.sel - 1 + count) % count; renderLauncher(); } break;
+    case "Enter": case "l": launchSelected(); break;
+  }
+}
+
+// --- Selector de proyecto (Ctrl+P) -----------------------------------------
+// Es la primera pantalla cuando la app se abre desde el buscador de Linux: ahi
+// no hay directorio actual que valga, asi que el proyecto se elige a mano
+// (recientes primero, como el "open recent" de VSCode). Lanzada desde una
+// terminal el proyecto sale del cwd y esta pantalla no aparece.
+const proj = { open: false, items: [], sel: 0, browse: null, home: "", locked: false };
+
+// short: rutas cortas con ~ para que la lista se lea de un vistazo.
+function short(path) {
+  if (proj.home && path.startsWith(proj.home)) return "~" + path.slice(proj.home.length);
+  return path;
+}
+
+// sinceText: "hace 2h" a partir del unix time del ultimo uso.
+function sinceText(at) {
+  if (!at) return "";
+  const secs = Math.max(0, Math.floor(Date.now() / 1000) - at);
+  if (secs < 90) return "recien";
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `hace ${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `hace ${hours}h`;
+  const days = Math.floor(hours / 24);
+  return days < 30 ? `hace ${days}d` : "";
+}
+
+async function loadProjects() {
+  const data = await api("/api/projects");
+  proj.home = data.home || "";
+  proj.browse = null;
+  const recent = data.recent || [];
+  const seen = new Set(recent.map(p => p.root));
+  proj.items = recent.map(p => ({ ...p, kind: "recent" }))
+    .concat((data.workspaces || []).filter(p => !seen.has(p.root)).map(p => ({ ...p, kind: "ws" })))
+    .concat([{ kind: "browse", name: "abrir otra carpeta...", root: "" }]);
+  proj.sel = 0;
+  renderProject();
+  return data;
+}
+
+function renderProject() {
+  const rows = [];
+  let section = "";
+  const heading = title => { if (section !== title) { section = title; rows.push(`<div class="pj-sec">${title}</div>`); } };
+
+  proj.items.forEach((item, i) => {
+    const sel = i === proj.sel ? "sel" : "";
+    if (item.kind === "recent") heading("recientes");
+    if (item.kind === "ws") heading("proyectos configurados");
+    if (item.kind === "browse") heading("otro");
+    if (item.kind === "dir" || item.kind === "up") heading("carpetas");
+    const tags = [];
+    if (item.kind === "ws" || (item.kind === "recent" && item.configured)) tags.push(`<span class="tag">config</span>`);
+    if (item.git) tags.push(`<span class="tag git">git</span>`);
+    rows.push(`
+      <div class="pj-row ${sel}" data-i="${i}">
+        ${ICONS.folder || ""}
+        <span class="nm">${esc(item.name)}</span>
+        <span class="rt">${item.root ? esc(short(item.root)) : ""}</span>
+        ${tags.join("")}
+        <span class="when">${esc(sinceText(item.at))}</span>
+      </div>`);
+  });
+
+  const list = document.getElementById("pj-list");
+  const crumb = proj.browse ? `<div class="pj-crumb">${esc(short(proj.browse.path))}</div>` : "";
+  list.innerHTML = crumb + rows.join("");
+  list.querySelectorAll(".pj-row").forEach(row => {
+    row.addEventListener("click", () => { proj.sel = Number(row.dataset.i); renderProject(); activateProject(); });
+  });
+  const selected = list.querySelector(".pj-row.sel");
+  if (selected) selected.scrollIntoView({ block: "nearest" });
+
+  document.getElementById("pj-foot").innerHTML = proj.browse
+    ? `<b>j/k</b> elegir · <b>enter</b> entrar · <b>o</b> abrir como proyecto · <b>h</b> subir` +
+      (proj.locked ? "" : " · <b>esc</b> volver")
+    : `<b>j/k</b> elegir · <b>enter</b> abrir` + (proj.locked ? "" : " · <b>esc</b> cerrar") +
+      ` · se guardan los 5 ultimos`;
+}
+
+// openProjects(locked): con locked no hay panel detras que mirar (la app
+// arranco sin proyecto), asi que no se puede cerrar sin elegir.
+async function openProjects(locked) {
+  proj.open = true;
+  proj.locked = !!locked;
+  document.getElementById("projects").classList.add("open");
+  try { await loadProjects(); } catch (e) { msg(e.message); }
+}
+
+function closeProjects() {
+  if (proj.locked) return;
+  proj.open = false;
+  document.getElementById("projects").classList.remove("open");
+}
+
+// browseInto lista carpetas para elegir un proyecto que no esta en config.json.
+async function browseInto(path) {
+  try {
+    const data = await api("/api/projects/browse?path=" + encodeURIComponent(path || proj.home));
+    proj.browse = data;
+    proj.items = [{ kind: "here", name: "abrir esta carpeta", root: data.path }]
+      .concat(data.parent ? [{ kind: "up", name: "..", root: data.parent }] : [])
+      .concat((data.dirs || []).map(d => ({ kind: "dir", name: d.name, root: d.root, git: d.git })));
+    proj.sel = 0;
+    renderProject();
+  } catch (e) { msg(e.message); }
+}
+
+// openProject: el cambio de proyecto reescribe TODO el contexto del panel
+// (workers, sesiones, servicios, jira), asi que se recarga la vista en vez de
+// intentar limpiar cada pieza a mano.
+async function openProject(item) {
+  // GET con query, como el resto del panel: el webview pierde los cuerpos de
+  // POST hacia su esquema interno.
+  const name = item.kind === "recent" || item.kind === "ws" ? item.name : "";
+  try {
+    await api(`/api/projects/open?name=${encodeURIComponent(name)}&root=${encodeURIComponent(item.root)}`);
+  } catch (e) { msg(e.message); return; }
+  location.reload();
+}
+
+function activateProject() {
+  const item = proj.items[proj.sel];
+  if (!item) return;
+  if (item.kind === "browse" || item.kind === "up" || item.kind === "dir") { browseInto(item.root); return; }
+  openProject(item);
+}
+
+function projectKey(e) {
+  const count = proj.items.length;
+  const item = proj.items[proj.sel];
+  switch (e.key) {
+    // Escape mientras se navegan carpetas vuelve a la lista, no cierra.
+    case "Escape": case "q":
+      if (proj.browse) { loadProjects().catch(() => {}); break; }
+      closeProjects();
+      break;
+    case "j": case "ArrowDown": if (count) { proj.sel = (proj.sel + 1) % count; renderProject(); } break;
+    case "k": case "ArrowUp": if (count) { proj.sel = (proj.sel - 1 + count) % count; renderProject(); } break;
+    case "h": case "Backspace": if (proj.browse && proj.browse.parent) browseInto(proj.browse.parent); break;
+    case "o": if (item && (item.kind === "dir" || item.kind === "here")) openProject({ kind: "dir", root: item.root }); break;
+    case "Enter": case "l": activateProject(); break;
+  }
+}
+
+// --- Panel de servicios (Ctrl+S): encender/apagar y logs en vivo -----------
+const svcp = { open: false, sel: 0, diagram: false, panes: [], sig: "" };
+
+function svcList() {
+  const w = state.workers.find(x => x.id === state.selected);
+  return ((w && w.services) || []).filter(s => s.name !== "voice" && s.name !== "voz");
+}
+
+function toggleServices() {
+  svcp.open = !svcp.open;
+  document.getElementById("svcpanel").classList.toggle("open", svcp.open);
+  if (svcp.open) {
+    svcp.sel = 0;
+    loadPanes();
+    renderServicesPanel();
+    renderPanes();
+    if (svcp.diagram) renderDiagram();
+    pollSvcLogs(true);
+  }
+}
+
+// svcId: los servicios de infraestructura se manejan por su id (docker:...,
+// compose:...); los procesos del services_conf, por su nombre de siempre.
+function svcId(service) {
+  return service.id || service.name;
+}
+
+// Familias de infraestructura: color y etiqueta corta para leer la lista de un
+// vistazo (que es base de datos, que es cola, que es cache).
+const KIND_META = {
+  postgres: { label: "postgres", color: "#4a9fd8" },
+  mysql: { label: "mysql", color: "#e48e00" },
+  mongo: { label: "mongo", color: "#4faa41" },
+  redis: { label: "redis", color: "#ff4438" },
+  rabbit: { label: "rabbit", color: "#ff6600" },
+  nats: { label: "nats", color: "#27aae1" },
+  kafka: { label: "kafka", color: "#a67ce0" },
+  search: { label: "search", color: "#f5c400" },
+  clickhouse: { label: "clickhouse", color: "#ffcc01" },
+  cassandra: { label: "cassandra", color: "#67c2e6" },
+  cache: { label: "cache", color: "#8fbf5f" },
+  storage: { label: "storage", color: "#c72e49" },
+  aws: { label: "aws", color: "#ff9900" },
+  mail: { label: "mail", color: "#7ec8e3" },
+  docker: { label: "docker", color: "#2496ed" },
+};
+
+// Estado de un servicio de infraestructura: "ausente" no es un error, es que
+// el contenedor todavia no existe y [s] lo crea.
+function svcStatus(service) {
+  // Verde lo que corre, rojo lo que esta quieto: el mismo codigo de color que
+  // usa el diagrama, para no tener que traducir entre las dos vistas.
+  if (!service.kind) {
+    return service.running
+      ? `<span class="chip ok">running</span><span class="chip">${humanMem(service.mem_kb)}</span>`
+      : `<span class="chip bad">off</span>`;
+  }
+  const ports = (service.ports || []).length ? `<span class="chip">:${service.ports.join(" :")}</span>` : "";
+  if (service.state === "running") return `<span class="chip ok">running</span>${ports}`;
+  if (service.state === "restarting") return `<span class="chip warn">reiniciando</span>${ports}`;
+  if (service.state === "ausente") return `<span class="chip bad">sin crear</span>`;
+  return `<span class="chip bad">${esc(service.state || "off")}</span>`;
+}
+
+function renderServicesPanel() {
+  const w = state.workers.find(x => x.id === state.selected) || {};
+  const list = svcList();
+  const running = list.filter(s => s.running).length;
+  document.getElementById("sv-head").innerHTML =
+    `<span class="t">SERVICIOS</span><span class="w">${esc(w.ticket || "")}</span>` +
+    `<span class="muted">${running}/${list.length} corriendo</span>`;
+
+  let section = "";
+  document.getElementById("sv-list").innerHTML = list.map((s, i) => {
+    const meta = KIND_META[s.kind] || null;
+    let head = "";
+    const title = meta ? "infraestructura del proyecto" : "procesos de desarrollo";
+    if (title !== section) { section = title; head = `<div class="sv-sec">${title}</div>`; }
+    const tag = meta
+      ? `<span class="kind" style="color:${meta.color};border-color:${meta.color}66">${meta.label}</span>`
+      : "";
+    const pinned = svcp.panes.includes(svcId(s)) ? `<span class="pin" title="en el mosaico">\u25a3</span>` : "";
+    return head + `
+    <div class="sv-row ${i === svcp.sel ? "sel" : ""}" title="${esc(s.desc || "")}">
+      ${tag}
+      <span class="nm">${esc(s.name)}</span>
+      ${pinned}
+      ${svcStatus(s)}
+    </div>`;
+  }).join("") || `<div class="exp-empty">sin servicios en este worker</div>`;
+  const sel = document.querySelector(".sv-row.sel");
+  if (sel) sel.scrollIntoView({ block: "nearest" });
+}
+
+// --- Vista de diagrama (tecla a): las mismas cajas por capas ---------------
+// Aplicaciones arriba, servicios en medio, infraestructura abajo, y entre
+// ellas las dependencias que el backend dedujo (puertos en la configuracion,
+// depends_on de los compose). Es la misma seleccion de la lista: j/k, s, x, R
+// siguen funcionando sobre el nodo resaltado.
+const DG = { w: 176, h: 60, gapX: 26, gapY: 92, padX: 26, padY: 34 };
+
+const DG_LANES = [
+  { key: "app", label: "aplicaciones" },
+  { key: "servicio", label: "servicios" },
+  { key: "infra", label: "infraestructura" },
+];
+
+function dgTier(service) {
+  return service.tier || (service.kind ? "infra" : "servicio");
+}
+
+// dgLayout reparte los nodos por capa y calcula la posicion de cada caja. Las
+// capas envuelven en varias lineas cuando no caben a lo ancho, y el hueco
+// entre capas se estira para llenar el alto disponible.
+function dgLayout(list, width, gapY) {
+  const perLine = Math.max(1, Math.floor((width - DG.padX * 2 + DG.gapX) / (DG.w + DG.gapX)));
+  const nodes = [];
+  const lanes = [];
+  let y = DG.padY;
+  for (const lane of DG_LANES) {
+    const members = list.map((s, i) => ({ s, i })).filter(({ s }) => dgTier(s) === lane.key);
+    if (!members.length) continue;
+    if (lanes.length) y += gapY;
+    lanes.push({ label: lane.label, y: y - 16 });
+    for (let start = 0; start < members.length; start += perLine) {
+      const line = members.slice(start, start + perLine);
+      const span = line.length * DG.w + (line.length - 1) * DG.gapX;
+      const left = Math.max(DG.padX, (width - span) / 2);
+      line.forEach((member, col) => {
+        nodes.push({ ...member, x: left + col * (DG.w + DG.gapX), y });
+      });
+      y += DG.h + 18;
+    }
+  }
+  return { nodes, lanes, height: y + DG.padY, gaps: Math.max(0, lanes.length - 1) };
+}
+
+function renderDiagram() {
+  const box = document.getElementById("sv-diagram");
+  const list = svcList();
+  const width = box.clientWidth || 900;
+  const available = box.clientHeight || 500;
+  // Segunda pasada: si sobra alto, las capas se separan hasta llenarlo, que es
+  // lo que hace que se lea como un diagrama y no como una lista con cajas.
+  let layout = dgLayout(list, width, DG.gapY);
+  if (layout.gaps && layout.height < available) {
+    layout = dgLayout(list, width, DG.gapY + (available - layout.height) / layout.gaps);
+  }
+  const { nodes, lanes, height } = layout;
+  const byId = new Map(nodes.map(n => [svcId(n.s), n]));
+
+  const edges = nodes.flatMap(node => (node.s.links || []).map(target => {
+    const to = byId.get(target);
+    if (!to) return "";
+    const live = node.s.running && to.s.running;
+    const cls = `dg-edge ${live ? "live" : ""}`;
+    // Entre capas la curva baja; dentro de la misma capa cruza de lado, que
+    // bajar y volver a subir se ve como un error de dibujo.
+    if (to.y === node.y) {
+      const back = to.x < node.x;
+      const x1 = back ? node.x : node.x + DG.w;
+      const x2 = back ? to.x + DG.w : to.x;
+      const y = node.y + DG.h / 2;
+      const bend = Math.min(60, Math.abs(x2 - x1) / 2);
+      return `<path class="${cls}" d="M${x1} ${y} C${x1 + (back ? -bend : bend)} ${y - 26}, ${x2 + (back ? bend : -bend)} ${y - 26}, ${x2} ${y}"/>`;
+    }
+    const x1 = node.x + DG.w / 2, y1 = node.y + DG.h;
+    const x2 = to.x + DG.w / 2, y2 = to.y;
+    const bend = Math.max(24, (y2 - y1) / 2);
+    return `<path class="${cls}" d="M${x1} ${y1} C${x1} ${y1 + bend}, ${x2} ${y2 - bend}, ${x2} ${y2}"/>`;
+  })).join("");
+
+  box.innerHTML = `
+    <div class="dg-canvas" style="height:${height}px">
+      <svg class="dg-edges" width="${width}" height="${height}">${edges}</svg>
+      ${lanes.map(l => `<div class="dg-lane" style="top:${l.y}px"><span>${l.label}</span></div>`).join("")}
+      ${nodes.map(n => dgNode(n)).join("")}
+    </div>`;
+  box.querySelectorAll(".dg-node").forEach(el => {
+    el.addEventListener("click", () => {
+      svcp.sel = Number(el.dataset.i);
+      renderDiagram();
+      pollSvcLogs(true);
+    });
+  });
+  const sel = box.querySelector(".dg-node.sel");
+  if (sel) sel.scrollIntoView({ block: "nearest" });
+}
+
+function dgNode({ s, i, x, y }) {
+  const meta = KIND_META[s.kind];
+  const state = s.kind ? (s.state || "off") : (s.running ? "running" : "off");
+  // El color de la caja es el ESTADO, que es lo que se busca de un vistazo:
+  // verde lo que corre, rojo lo que esta quieto, ambar lo que no se estabiliza.
+  // La familia (postgres, redis...) se mantiene en el color de su etiqueta.
+  const live = state === "running";
+  const stateColor = live ? "#a6ff2b" : state === "restarting" ? "#ffb300" : "#ff3355";
+  const ports = (s.ports || []).length ? " · :" + s.ports.join(" :") : "";
+  const classes = ["dg-node", i === svcp.sel ? "sel" : "", live ? "on" : "off"].join(" ");
+  return `
+    <div class="${classes}" data-i="${i}" title="${esc(s.desc || "")}"
+         style="left:${x}px;top:${y}px;width:${DG.w}px;height:${DG.h}px;
+                border-color:${stateColor}${live ? "88" : "55"};
+                box-shadow:0 6px 18px rgba(0,0,0,.5), 0 0 ${live ? 18 : 0}px ${stateColor}22">
+      <span class="bar" style="background:${stateColor}"></span>
+      <span class="nm">${esc(s.name)}</span>
+      <span class="sub">${esc(meta ? meta.label : "proceso")}
+        <b style="color:${stateColor};font-weight:700">· ${esc(state)}</b>${esc(ports)}
+      </span>
+    </div>`;
+}
+
+function toggleDiagram() {
+  svcp.diagram = !svcp.diagram;
+  document.getElementById("sv-body").style.display = svcp.diagram ? "none" : "grid";
+  document.getElementById("sv-diagram").style.display = svcp.diagram ? "block" : "none";
+  document.getElementById("sv-foot").innerHTML = svcp.diagram
+    ? `<b>j/k</b> servicio · <b>s</b> start · <b>x</b> stop · <b>R</b> restart · ` +
+      `<b>a</b> volver a la lista · <b>q/esc/C-s</b> cerrar · las lineas animadas son dependencias vivas`
+    : `<b>j/k</b> servicio · <b>enter</b> fijar en mosaico · <b>0</b> limpiar · ` +
+      `<b>s</b> start · <b>x</b> stop · <b>R</b> restart · <b>a</b> diagrama · ` +
+      `<b>J/K u f b</b> scroll · <b>q/esc/C-s</b> cerrar`;
+  if (svcp.diagram) renderDiagram();
+}
+
+// --- Mosaico de logs: varios servicios a la vez ----------------------------
+// enter fija (o suelta) el servicio seleccionado. Los fijados quedan en un
+// mosaico con su nombre y sus logs en vivo, y la seleccion se guarda por
+// proyecto y worker: te vas a escribirle al agente, vuelves al modulo de
+// servicios y tus terminales siguen agrupadas igual (tambien tras reabrir).
+function paneStoreKey() {
+  return `versecam.panes.${state.project || ""}.${state.selected || ""}`;
+}
+
+function loadPanes() {
+  try {
+    const raw = localStorage.getItem(paneStoreKey());
+    svcp.panes = raw ? JSON.parse(raw) : [];
+  } catch (e) { svcp.panes = []; }
+  if (!Array.isArray(svcp.panes)) svcp.panes = [];
+}
+
+function savePanes() {
+  try { localStorage.setItem(paneStoreKey(), JSON.stringify(svcp.panes)); } catch (e) { /* sin storage: dura la sesion */ }
+}
+
+function togglePane() {
+  const service = svcList()[svcp.sel];
+  if (!service) return;
+  const id = svcId(service);
+  const at = svcp.panes.indexOf(id);
+  if (at >= 0) svcp.panes.splice(at, 1);
+  else svcp.panes.push(id);
+  savePanes();
+  renderServicesPanel();
+  renderPanes();
+  pollSvcLogs(true);
+  msg(at >= 0 ? service.name + " fuera del mosaico" : service.name + " en el mosaico (" + svcp.panes.length + ")");
+}
+
+function clearPanes() {
+  if (!svcp.panes.length) return;
+  svcp.panes = [];
+  savePanes();
+  renderServicesPanel();
+  renderPanes();
+  pollSvcLogs(true);
+  msg("mosaico vacio: vuelve el visor de un solo servicio");
+}
+
+// renderPanes solo RECONSTRUYE cuando cambia el conjunto de servicios fijados;
+// si no, repintar cada refresco borraria los logs y el scroll de cada panel.
+function renderPanes() {
+  const grid = document.getElementById("sv-panes");
+  const single = document.getElementById("sv-logs");
+  const list = svcList();
+  svcp.panes = svcp.panes.filter(id => list.some(s => svcId(s) === id));
+
+  const on = svcp.panes.length > 0;
+  grid.style.display = on ? "grid" : "none";
+  single.style.display = on ? "block" : "none";
+  if (on) single.style.display = "none";
+  if (!on) { svcp.sig = ""; return; }
+
+  const cols = svcp.panes.length === 1 ? 1 : 2;
+  grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+  grid.style.gridAutoRows = `minmax(0, 1fr)`;
+
+  const sig = svcp.panes.join("|");
+  if (sig !== svcp.sig) {
+    svcp.sig = sig;
+    grid.innerHTML = svcp.panes.map((id, i) => `
+      <div class="pane" data-pane="${i}">
+        <div class="pane-head" id="pane-head-${i}"></div>
+        <div class="pane-body" id="pane-${i}"></div>
+      </div>`).join("");
+    grid.querySelectorAll(".pane").forEach(pane => {
+      pane.addEventListener("click", () => {
+        const id = svcp.panes[Number(pane.dataset.pane)];
+        const at = list.findIndex(s => svcId(s) === id);
+        if (at >= 0) { svcp.sel = at; renderServicesPanel(); renderPanes(); }
+      });
+    });
+  }
+  // Cabeceras y panel activo: eso si se refresca siempre.
+  const selectedId = svcId(list[svcp.sel] || {});
+  svcp.panes.forEach((id, i) => {
+    const service = list.find(s => svcId(s) === id) || { name: id };
+    const head = document.getElementById(`pane-head-${i}`);
+    if (head) head.innerHTML = `<span class="nm">${esc(service.name)}</span>${svcStatus(service)}`;
+    const pane = grid.querySelector(`.pane[data-pane="${i}"]`);
+    if (pane) pane.classList.toggle("act", id === selectedId);
+  });
+}
+
+// svcScrollBox: las teclas de scroll actuan sobre el panel del servicio
+// seleccionado; si no esta en el mosaico, sobre el primero.
+function svcScrollBox() {
+  if (!svcp.panes.length) return document.getElementById("sv-logs");
+  const at = svcp.panes.indexOf(svcId(svcList()[svcp.sel] || {}));
+  return document.getElementById("pane-" + Math.max(0, at)) || document.getElementById("sv-logs");
+}
+
+// paintLogs vuelca la salida en una caja respetando el scroll: si el usuario
+// esta leyendo mas arriba, no se lo arrastramos al final.
+function paintLogs(box, output, service) {
+  if (!box) return;
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 50;
+  box.innerHTML = output
+    ? ansiToHtml(output)
+    : esc(service && service.running ? "(sin salida todavia)" : "(servicio apagado: [s] lo inicia)");
+  return atBottom;
+}
+
+async function pollSvcLogs(force) {
+  if (!svcp.open || svcp.diagram) return;
+  const list = svcList();
+  if (svcp.panes.length) {
+    await Promise.all(svcp.panes.map(async (id, i) => {
+      const box = document.getElementById("pane-" + i);
+      const service = list.find(s => svcId(s) === id);
+      if (!box) return;
+      try {
+        const data = await api(`/api/workers/${encodeURIComponent(state.selected)}/services/${encodeURIComponent(id)}/logs`);
+        const atBottom = paintLogs(box, data.output, service);
+        if (atBottom || force) box.scrollTop = box.scrollHeight;
+      } catch (e) { box.textContent = e.message; }
+    }));
+    return;
+  }
+  const service = list[svcp.sel];
+  const box = document.getElementById("sv-logs");
+  if (!service) { box.textContent = ""; return; }
+  try {
+    const data = await api(`/api/workers/${encodeURIComponent(state.selected)}/services/${encodeURIComponent(svcId(service))}/logs`);
+    const atBottom = paintLogs(box, data.output, service);
+    if (atBottom || force) box.scrollTop = box.scrollHeight;
+  } catch (e) {
+    box.textContent = service.running ? e.message : "(servicio apagado: [s] lo inicia)";
+  }
+}
+setInterval(() => pollSvcLogs(false), 1500);
+
+// svcRefresh repinta la vista que este activa (lista o diagrama) y recarga los
+// logs del servicio seleccionado.
+function svcRefresh() {
+  renderServicesPanel();
+  renderPanes();
+  if (svcp.diagram) renderDiagram();
+  pollSvcLogs(true);
+}
+
+async function svcAction(action) {
+  const service = svcList()[svcp.sel];
+  if (!service) return;
+  msg(action + " " + service.name + "...");
+  try {
+    await api(`/api/workers/${encodeURIComponent(state.selected)}/services/${encodeURIComponent(svcId(service))}/do/${action}`);
+    msg(action + " " + service.name + " OK");
+    setTimeout(async () => {
+      await loadWorkers().catch(() => {});
+      svcRefresh();
+    }, 1200);
+  } catch (e) { msg(e.message); }
+}
+
+function servicesKey(e) {
+  const box = svcScrollBox();
+  const page = box.clientHeight - 40;
+  const count = svcList().length;
+  switch (e.key) {
+    case "q": case "Escape": toggleServices(); break;
+    case "a": toggleDiagram(); break;
+    case "Enter": togglePane(); break;
+    case "0": clearPanes(); break;
+    case "j": if (count) { svcp.sel = (svcp.sel + 1) % count; svcRefresh(); } break;
+    case "k": if (count) { svcp.sel = (svcp.sel - 1 + count) % count; svcRefresh(); } break;
+    case "s": svcAction("start"); break;
+    case "x": svcAction("stop"); break;
+    case "R": svcAction("restart"); break;
+    case "J": box.scrollTop += 51; break;
+    case "K": box.scrollTop -= 51; break;
+    case "u": box.scrollTop -= page / 2; break;
+    case "f": case " ": box.scrollTop += page; break;
+    case "b": box.scrollTop -= page; break;
+  }
+}
+
+// --- Panel de GitHub (Ctrl+G): repos, ramas, PRs y commits del worker ------
+const github = { open: false };
+
+function toggleGithub() {
+  github.open = !github.open;
+  document.getElementById("github").classList.toggle("open", github.open);
+  if (github.open) loadGithub(false);
+}
+
+async function loadGithub(refresh) {
+  const w = state.workers.find(x => x.id === state.selected) || {};
+  const head = document.getElementById("gh-head");
+  head.innerHTML = `<span class="t">GITHUB</span><span class="w">${esc(w.ticket || "")}</span><span class="muted">consultando...</span>`;
+  let data;
+  try {
+    data = await api(`/api/workers/${encodeURIComponent(state.selected)}/github${refresh ? "?refresh=1" : ""}`);
+  } catch (e) {
+    head.innerHTML = `<span class="t">GITHUB</span><span class="dels">${esc(e.message)}</span>`;
+    return;
+  }
+  head.innerHTML =
+    `<span class="t">GITHUB</span>` +
+    `<span class="w">${esc(w.ticket || "")}</span>` +
+    (data.org ? `<span class="muted">${esc(data.org)}</span>` : "") +
+    `<span class="muted" style="margin-left:auto">${(data.repos || []).length} repos · ${(data.prs || []).length} PRs</span>`;
+
+  const repoRow = r => {
+    if (r.error) return `<div class="gh-row"><span class="repo">${esc(r.name)}</span><span class="chip bad">${esc(r.error)}</span></div>`;
+    return `<div class="gh-row">
+      <span class="repo">${esc(r.name)}</span>
+      <span class="branch">${esc(r.branch)}</span>
+      ${r.dirty > 0 ? `<span class="chip warn">dirty ${r.dirty}</span>` : `<span class="chip ok">limpio</span>`}
+      ${r.ahead > 0 ? `<span class="chip warn">${r.ahead} sin push</span>`
+        : r.has_remote ? `<span class="chip ok">al dia</span>` : `<span class="chip">sin remoto</span>`}
+    </div>`;
+  };
+
+  const prRow = p => `<div class="gh-row">
+    <span class="repo">${esc(p.repo)}</span>
+    <span class="branch">#${p.number}</span>
+    <span class="title">${esc(p.title)}</span>
+    <span class="chip ${p.state === "OPEN" ? "ok" : p.state === "MERGED" ? "info" : "bad"}">${esc(p.state)}</span>
+    <span class="chip ${p.checks === "verde" ? "ok" : (p.checks || "").includes("fallando") ? "bad" : "warn"}">${esc(p.checks)}</span>
+    <div class="gh-url">${esc(p.url)}</div>
+  </div>`;
+
+  document.getElementById("gh-body").innerHTML =
+    `<h3>Repos y ramas</h3>` +
+    ((data.repos || []).map(repoRow).join("") || `<div class="muted">sin repos</div>`) +
+    `<h3>Pull requests</h3>` +
+    ((data.prs || []).map(prRow).join("") || `<div class="muted">sin PRs para estas ramas</div>`) +
+    `<h3>Arbol de versiones</h3>` +
+    ((data.graphs || []).map(graphBlock).join("") || `<div class="muted">sin commits</div>`);
+  document.getElementById("gh-body").scrollTop = 0;
+}
+
+/* ---- Arbol de versiones: asignacion de carriles + dibujo SVG ---------- */
+const GG_COLORS = ["#22d3ee", "#f472b6", "#a78bfa", "#4ade80", "#fbbf24", "#60a5fa", "#fb7185", "#34d399"];
+const GG_LANE = 13, GG_ROW = 26, GG_MID = GG_ROW / 2;
+const ggX = i => 7 + i * GG_LANE;
+
+// Algoritmo clasico de carriles: cada carril "espera" un hash; el commit cae
+// en el primer carril que lo espera, los demas que lo esperaban se fusionan
+// (curvas de merge), y sus padres reservan carriles hacia abajo.
+function ggRows(commits) {
+  const lanes = [], colors = [];
+  let next = 0;
+  const rows = [];
+  let maxLanes = 1;
+  for (const c of commits) {
+    const top = [], bottom = [];
+    const snapshot = lanes.slice();
+    let col = lanes.findIndex(h => h === c.hash);
+    if (col === -1) {
+      col = lanes.indexOf(undefined);
+      if (col === -1) col = lanes.length;
+      lanes[col] = c.hash;
+      colors[col] = next++ % GG_COLORS.length;
+    }
+    const dotColor = colors[col];
+    for (let i = 0; i < snapshot.length; i++) {
+      if (snapshot[i] === undefined) continue;
+      top.push({ from: i, to: snapshot[i] === c.hash ? col : i, color: colors[i] });
+    }
+    for (let i = 0; i < lanes.length; i++)
+      if (i !== col && lanes[i] === c.hash) lanes[i] = undefined;
+    const parents = c.parents || [];
+    const diag = new Set();
+    if (!parents.length) {
+      lanes[col] = undefined;
+    } else {
+      lanes[col] = parents[0];
+      for (let p = 1; p < parents.length; p++) {
+        let j = lanes.findIndex(h => h === parents[p]);
+        if (j === -1) {
+          j = lanes.indexOf(undefined);
+          if (j === -1) j = lanes.length;
+          lanes[j] = parents[p];
+          colors[j] = next++ % GG_COLORS.length;
+        }
+        bottom.push({ from: col, to: j, color: colors[j] });
+        diag.add(j);
+      }
+    }
+    for (let i = 0; i < lanes.length; i++)
+      if (lanes[i] !== undefined && !diag.has(i)) bottom.push({ from: i, to: i, color: colors[i] });
+    while (lanes.length && lanes[lanes.length - 1] === undefined) { lanes.pop(); colors.pop(); }
+    maxLanes = Math.max(maxLanes, snapshot.length, lanes.length, col + 1);
+    rows.push({ c, col, dotColor, top, bottom, merge: parents.length > 1 });
+  }
+  return { rows, width: ggX(maxLanes - 1) + 9 };
+}
+
+function ggSvg(row, width) {
+  const seg = (s, y1, y2) => {
+    const x1 = ggX(s.from), x2 = ggX(s.to), stroke = GG_COLORS[s.color];
+    if (x1 === x2) return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="2"/>`;
+    const my = (y1 + y2) / 2;
+    return `<path d="M ${x1} ${y1} C ${x1} ${my + (y2 - y1) / 4}, ${x2} ${my - (y2 - y1) / 4}, ${x2} ${y2}" stroke="${stroke}" stroke-width="2" fill="none"/>`;
+  };
+  const parts = row.top.map(s => seg(s, 0, GG_MID)).concat(row.bottom.map(s => seg(s, GG_MID, GG_ROW)));
+  const dc = GG_COLORS[row.dotColor];
+  parts.push(row.merge
+    ? `<circle cx="${ggX(row.col)}" cy="${GG_MID}" r="4" fill="#0b1020" stroke="${dc}" stroke-width="2"/>`
+    : `<circle cx="${ggX(row.col)}" cy="${GG_MID}" r="4.5" fill="${dc}"/>`);
+  return `<svg width="${width}" height="${GG_ROW}" viewBox="0 0 ${width} ${GG_ROW}">${parts.join("")}</svg>`;
+}
+
+function ggRefChip(ref) {
+  let cls = "local", label = ref;
+  if (ref.startsWith("HEAD")) cls = "head";
+  else if (ref.startsWith("tag: ")) { cls = "tag"; label = ref.slice(5); }
+  else if (ref.includes("/")) cls = "remote";
+  return `<span class="gg-ref ${cls}">${esc(label)}</span>`;
+}
+
+function graphBlock(g) {
+  const { rows, width } = ggRows(g.commits || []);
+  return `<div class="gg-repo">
+    <div class="gh-row"><span class="repo">${esc(g.repo)}</span><span class="muted">${rows.length} commits · todas las ramas</span></div>
+    ${rows.map(r => `<div class="gg-row">
+      ${ggSvg(r, width)}
+      <span class="hash">${esc(r.c.short)}</span>
+      <span class="msg">${(r.c.refs || []).map(ggRefChip).join("")}${esc(r.c.subject)}</span>
+      <span class="who">${esc(r.c.author)} · ${esc(r.c.date)}</span>
+    </div>`).join("")}
+  </div>`;
+}
+
+function githubKey(e) {
+  const box = document.getElementById("gh-body");
+  const page = box.clientHeight - 40;
+  switch (e.key) {
+    case "q": case "Escape": toggleGithub(); break;
+    case "j": case "J": box.scrollTop += 51; break;
+    case "k": case "K": box.scrollTop -= 51; break;
+    case "u": box.scrollTop -= page / 2; break;
+    case "f": case " ": box.scrollTop += page; break;
+    case "b": box.scrollTop -= page; break;
+    case "g": box.scrollTop = 0; break;
+    case "G": box.scrollTop = box.scrollHeight; break;
+    case "r": loadGithub(true); break;
+  }
+}
+
+document.addEventListener("keydown", e => {
+  // Tab / Shift+Tab: interceptado ANTES que el manejo de foco del webview
+  // (listener en fase de captura). Shift+Tab cicla los modos de Claude.
+  if ((e.code === "Tab" || e.key === "Tab" || e.key === "ISO_Left_Tab") && !e.ctrlKey && !e.altKey) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!exp.open && !jira.open && !proj.open) {
+      sendHex(e.shiftKey || e.key === "ISO_Left_Tab" ? ["1b", "5b", "5a"] : ["09"]);
+    }
+    return;
+  }
+  // El selector de proyecto se come TODO el teclado: no hay panel debajo que
+  // pueda recibir teclas mientras se elige.
+  if (proj.open) {
+    e.preventDefault();
+    projectKey(e);
+    return;
+  }
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key === "p") {
+    e.preventDefault();
+    openProjects(false);
+    return;
+  }
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key === "d") {
+    e.preventDefault();
+    toggleExplorer();
+    return;
+  }
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key === "t") {
+    e.preventDefault();
+    toggleJira();
+    return;
+  }
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key === "g") {
+    e.preventDefault();
+    toggleGithub();
+    return;
+  }
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key === "a") {
+    e.preventDefault();
+    toggleLauncher();
+    return;
+  }
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key === "s") {
+    e.preventDefault();
+    toggleServices();
+    return;
+  }
+  // Ctrl+Shift+V: leer el ultimo mensaje. Ctrl+Shift+L: voz en vivo on/off.
+  // Ctrl+V queda LIBRE para pegar: sin preventDefault, el evento paste
+  // nativo lo captura y manda el texto a la terminal.
+  if (e.ctrlKey && e.shiftKey && !e.altKey && e.key.toLowerCase() === "v") {
+    e.preventDefault();
+    speakLast();
+    return;
+  }
+  if (e.ctrlKey && e.shiftKey && !e.altKey && e.key.toLowerCase() === "l") {
+    e.preventDefault();
+    toggleVoice();
+    return;
+  }
+  if (e.ctrlKey && !e.altKey && !e.shiftKey && e.key === "v" &&
+      !exp.open && !jira.open && !github.open && !launcher.open && !svcp.open) {
+    // WebKitGTK no dispara el evento paste sin un campo editable: se maneja
+    // el pegado directo desde aqui.
+    e.preventDefault();
+    pasteClipboard();
+    return;
+  }
+  if (assoc.open) {
+    e.preventDefault();
+    assocKey(e);
+    return;
+  }
+  if (exp.open) {
+    e.preventDefault();
+    explorerKey(e);
+    return;
+  }
+  if (jira.open) {
+    e.preventDefault();
+    jiraKey(e);
+    return;
+  }
+  if (launcher.open) {
+    e.preventDefault();
+    launcherKey(e);
+    return;
+  }
+  if (svcp.open) {
+    e.preventDefault();
+    servicesKey(e);
+    return;
+  }
+  if (github.open) {
+    e.preventDefault();
+    githubKey(e);
+    return;
+  }
+  if (e.ctrlKey && !e.altKey && !e.shiftKey) {
+    switch (e.key) {
+      case "ArrowDown": e.preventDefault(); moveWorker(1); return;
+      case "ArrowUp": e.preventDefault(); moveWorker(-1); return;
+      case "j": e.preventDefault(); moveWorker(1); return;
+      case "k": e.preventDefault(); moveWorker(-1); return;
+      case "h": e.preventDefault(); cycleTab(-1); return;
+      case "l": e.preventDefault(); cycleTab(1); return;
+    }
+  }
+  const hex = keyHex(e);
+  if (hex) { e.preventDefault(); sendHex(hex); }
+}, true);
+
+// pasteClipboard: texto -> bytes a la terminal; imagen (u otro contenido no
+// legible) -> Ctrl+V crudo para que Claude Code lo lea del portapapeles del
+// sistema via xclip, como en una terminal normal.
+async function pasteClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) {
+      const bytes = new TextEncoder().encode(text.replaceAll("\n", "\r"));
+      sendHex(Array.from(bytes).map(b => b.toString(16).padStart(2, "0")));
+      return;
+    }
+  } catch (err) { /* portapapeles sin texto o sin permiso */ }
+  sendHex(["16"]);
+  msg("Ctrl+V enviado a Claude (lee el portapapeles del sistema)");
+}
+
+document.addEventListener("paste", e => {
+  const data = e.clipboardData || window.clipboardData;
+  const text = data.getData("text");
+  if (text) {
+    e.preventDefault();
+    const bytes = new TextEncoder().encode(text.replaceAll("\n", "\r"));
+    sendHex(Array.from(bytes).map(b => b.toString(16).padStart(2, "0")));
+    return;
+  }
+  // Imagen en el portapapeles: se reenvia el Ctrl+V crudo (0x16) para que
+  // Claude Code lea la imagen del portapapeles del sistema el mismo (via
+  // xclip), igual que en una terminal normal.
+  const hasImage = [...(data.items || [])].some(item => item.type.startsWith("image/"));
+  if (hasImage) {
+    e.preventDefault();
+    sendHex(["16"]);
+    msg("imagen: enviada a Claude via portapapeles");
+  }
+});
+
+// --- Loops -----------------------------------------------------------------
+function tickClock() {
+  document.getElementById("clock").textContent = new Date().toLocaleTimeString("es-CO", { hour12: false });
+}
+
+// boot: sin proyecto abierto (app lanzada desde el buscador de aplicaciones)
+// la primera pantalla es el selector, y nada del panel se consulta hasta que
+// haya uno elegido.
+async function boot() {
+  let active = null;
+  try { active = (await api("/api/projects")).active; } catch (e) { msg(e.message); }
+  if (!active) {
+    await openProjects(true);
+    return;
+  }
+  state.project = active.name;
+  const label = document.getElementById("project");
+  label.textContent = active.name;
+  label.title = active.root + "  ·  Ctrl+P: cambiar de proyecto";
+  label.onclick = () => openProjects(false);
+  state.ready = true;
+  loadWorkers().catch(() => {});
+  pollVoiceState();
+}
+
+window.addEventListener("resize", () => { measure(); if (svcp.open && svcp.diagram) renderDiagram(); });
+measure();
+tickClock();
+boot();
+setInterval(tickClock, 1000);
+setInterval(() => { if (state.ready) pollVoiceState(); }, 10000);
+setInterval(() => { if (state.ready) loadWorkers().catch(() => {}); }, 3000);
+setInterval(() => { if (state.ready) loadSessions(false); }, 5000);
+setInterval(() => { if (state.ready) pollScreen(); }, 120);
+</script>
+</body>
+</html>

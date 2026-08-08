@@ -1,0 +1,4 @@
+versecam
+*.wav
+.claude/settings.local.json*
+versecam-desktop
